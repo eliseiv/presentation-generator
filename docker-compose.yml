@@ -14,6 +14,7 @@ services:
     environment:
       APP_DATA_DIRECTORY: /app_data
       TEMP_DIRECTORY: /tmp/presenton
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
       USER_CONFIG_PATH: /app_data/userConfig.json
       PRESENTON_APP_ROOT: /app
       SERVICE_API_KEY: ${SERVICE_API_KEY:-}
