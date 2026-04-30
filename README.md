@@ -527,6 +527,11 @@ Prepend your server’s root URL to <code>path</code> and
 
 <ul>
   <li>
+    <a href="./IOS_API.md">
+      iOS Backend API Integration Guide
+    </a>
+  </li>
+  <li>
     <a href="https://docs.presenton.ai/using-presenton-api">
       Full API Documentation
     </a>
