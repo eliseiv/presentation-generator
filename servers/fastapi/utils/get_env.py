@@ -17,6 +17,14 @@ def get_temp_directory_env():
     return os.getenv("TEMP_DIRECTORY")
 
 
+def get_cleanup_ttl_seconds_env():
+    return os.getenv("CLEANUP_TTL_SECONDS")
+
+
+def get_cleanup_interval_seconds_env():
+    return os.getenv("CLEANUP_INTERVAL_SECONDS")
+
+
 def get_user_config_path_env():
     return os.getenv("USER_CONFIG_PATH")
 

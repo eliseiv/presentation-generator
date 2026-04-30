@@ -108,11 +108,271 @@ def custom_openapi():
                 if isinstance(operation, dict):
                     operation.setdefault("security", [{"ServiceApiKey": []}])
 
+    _apply_swagger_examples(openapi_schema)
+
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
 
 app.openapi = custom_openapi
+
+
+def _set_operation(
+    openapi_schema: dict,
+    path: str,
+    method: str,
+    *,
+    summary: str,
+    description: str,
+    response_description: str | None = None,
+) -> dict | None:
+    operation = openapi_schema.get("paths", {}).get(path, {}).get(method)
+    if not operation:
+        return None
+
+    operation["summary"] = summary
+    operation["description"] = description
+    if response_description:
+        for response in operation.get("responses", {}).values():
+            if isinstance(response, dict) and response.get("description") == "Successful Response":
+                response["description"] = response_description
+    return operation
+
+
+def _set_json_request_examples(operation: dict, examples: dict) -> None:
+    request_body = operation.setdefault("requestBody", {})
+    content = request_body.setdefault("content", {})
+    content.setdefault("application/json", {}).setdefault("examples", examples)
+
+
+def _set_json_response_example(
+    operation: dict,
+    status_code: str,
+    *,
+    description: str,
+    example: dict | list | str,
+) -> None:
+    responses = operation.setdefault("responses", {})
+    response = responses.setdefault(status_code, {"description": description})
+    response["description"] = description
+    content = response.setdefault("content", {})
+    content.setdefault("application/json", {}).setdefault("example", example)
+
+
+def _apply_swagger_examples(openapi_schema: dict) -> None:
+    generate_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/ppt/presentation/generate",
+        "post",
+        summary="Сгенерировать презентацию синхронно",
+        description=(
+            "Создает презентацию из текста, Markdown-слайдов или ранее загруженных "
+            "файлов. Запрос блокируется до завершения генерации и экспорта.\n\n"
+            "Авторизация: нажмите **Authorize** в Swagger и вставьте `SERVICE_API_KEY`, "
+            "либо передайте заголовок `X-API-Key`.\n\n"
+            "Пример curl:\n"
+            "```bash\n"
+            "curl -X POST https://appbackendnew.store/api/v1/ppt/presentation/generate \\\n"
+            "  -H 'X-API-Key: <SERVICE_API_KEY>' \\\n"
+            "  -H 'Content-Type: application/json' \\\n"
+            "  -d '{\"content\":\"Introduction to Machine Learning\",\"n_slides\":5,"
+            "\"language\":\"English\",\"template\":\"general\",\"export_as\":\"pptx\"}'\n"
+            "```"
+        ),
+        response_description="Путь к готовому файлу презентации и ID презентации.",
+    )
+    if generate_operation:
+        _set_json_request_examples(
+            generate_operation,
+            {
+                "prompt": {
+                    "summary": "Генерация из prompt",
+                    "description": "Минимальный пример генерации PPTX из темы.",
+                    "value": {
+                        "content": "Introduction to Machine Learning",
+                        "instructions": "Make it practical and suitable for executives.",
+                        "tone": "professional",
+                        "verbosity": "standard",
+                        "web_search": False,
+                        "n_slides": 5,
+                        "language": "English",
+                        "template": "general",
+                        "include_table_of_contents": False,
+                        "include_title_slide": True,
+                        "files": None,
+                        "export_as": "pptx",
+                        "trigger_webhook": False,
+                    },
+                },
+                "markdown": {
+                    "summary": "Генерация из готовых Markdown-слайдов",
+                    "value": {
+                        "content": "Quarterly business review",
+                        "slides_markdown": [
+                            "# Q1 Results\n\nRevenue, margin, and growth overview",
+                            "## Key Wins\n\n- New markets\n- Better retention\n- Faster onboarding",
+                            "## Next Steps\n\n- Expand sales\n- Improve support\n- Optimize costs",
+                        ],
+                        "language": "English",
+                        "template": "general",
+                        "export_as": "pdf",
+                    },
+                },
+                "files": {
+                    "summary": "Генерация с загруженными файлами",
+                    "description": "Сначала загрузите файлы через /api/v1/ppt/files/upload.",
+                    "value": {
+                        "content": "Create a concise report from uploaded documents",
+                        "files": ["/tmp/presenton/abc/source.pdf"],
+                        "n_slides": 8,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+            },
+        )
+        _set_json_response_example(
+            generate_operation,
+            "200",
+            description="Презентация успешно создана.",
+            example={
+                "presentation_id": "d3000f96-096c-4768-b67b-e99aed029b57",
+                "path": "/app_data/exports/d3000f96-096c-4768-b67b-e99aed029b57/Introduction_to_Machine_Learning.pptx",
+                "edit_path": "/presentation?id=d3000f96-096c-4768-b67b-e99aed029b57",
+            },
+        )
+
+    async_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/ppt/presentation/generate/async",
+        "post",
+        summary="Поставить генерацию презентации в очередь",
+        description=(
+            "Запускает генерацию в фоне и сразу возвращает task id. Используйте "
+            "`GET /api/v1/ppt/presentation/status/{id}`, чтобы проверить статус."
+        ),
+        response_description="Задача фоновой генерации создана.",
+    )
+    if async_operation:
+        _set_json_request_examples(
+            async_operation,
+            {
+                "async_prompt": {
+                    "summary": "Асинхронная генерация",
+                    "value": {
+                        "content": "AI automation in customer support",
+                        "n_slides": 6,
+                        "language": "English",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                }
+            },
+        )
+        _set_json_response_example(
+            async_operation,
+            "200",
+            description="Задача создана.",
+            example={
+                "id": "task-9f1d8d5b7f0a4a8a9c7b6e1d2c3b4a5f",
+                "status": "pending",
+                "message": "Queued for generation",
+                "error": None,
+                "data": None,
+            },
+        )
+
+    status_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/ppt/presentation/status/{id}",
+        "get",
+        summary="Проверить статус фоновой генерации",
+        description=(
+            "Возвращает состояние async-задачи: `pending`, `completed` или `error`. "
+            "Когда статус `completed`, поле `data` содержит результат генерации."
+        ),
+        response_description="Текущее состояние задачи.",
+    )
+    if status_operation:
+        _set_json_response_example(
+            status_operation,
+            "200",
+            description="Статус задачи.",
+            example={
+                "id": "task-9f1d8d5b7f0a4a8a9c7b6e1d2c3b4a5f",
+                "status": "completed",
+                "message": "Presentation generation completed",
+                "error": None,
+                "data": {
+                    "presentation_id": "d3000f96-096c-4768-b67b-e99aed029b57",
+                    "path": "/app_data/exports/d3000f96-096c-4768-b67b-e99aed029b57/report.pptx",
+                    "edit_path": "/presentation?id=d3000f96-096c-4768-b67b-e99aed029b57",
+                },
+            },
+        )
+
+    upload_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/ppt/files/upload",
+        "post",
+        summary="Загрузить файлы-источники",
+        description=(
+            "Загружает документы, которые затем можно передать в поле `files` при "
+            "генерации презентации. Ответ содержит временные пути файлов."
+        ),
+        response_description="Список путей загруженных файлов.",
+    )
+    if upload_operation:
+        _set_json_response_example(
+            upload_operation,
+            "200",
+            description="Файлы успешно загружены.",
+            example=["/tmp/presenton/8f2b/source.pdf"],
+        )
+
+    image_generate_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/ppt/images/generate",
+        "get",
+        summary="Сгенерировать изображение",
+        description=(
+            "Генерирует одно изображение по prompt. По умолчанию используется "
+            "`gpt-image-1.5`; при rate limit сервис автоматически переключается "
+            "на `dall-e-3`."
+        ),
+        response_description="Путь к изображению или URL stock-изображения.",
+    )
+    if image_generate_operation:
+        _set_json_response_example(
+            image_generate_operation,
+            "200",
+            description="Изображение создано.",
+            example="/app_data/images/2f75f0a9-73c9-46d9-a916-d3c3fbc7d0a1.png",
+        )
+
+    image_search_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/ppt/images/search",
+        "get",
+        summary="Найти stock-изображения",
+        description=(
+            "Ищет изображения через Pexels или Pixabay. Provider можно передать "
+            "параметром `provider=pexels|pixabay`; если не передать, используется "
+            "выбранный IMAGE_PROVIDER или Pexels по умолчанию."
+        ),
+        response_description="Список URL найденных изображений.",
+    )
+    if image_search_operation:
+        _set_json_response_example(
+            image_search_operation,
+            "200",
+            description="Изображения найдены.",
+            example=[
+                "https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg",
+                "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
+            ],
+        )
 
 # Routers
 app.include_router(API_V1_PPT_ROUTER)

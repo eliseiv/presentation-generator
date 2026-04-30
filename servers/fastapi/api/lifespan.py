@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import os
 
 from fastapi import FastAPI
 
 from migrations import migrate_database_on_startup
+from services.cleanup_service import periodic_cleanup_loop
 from services.database import create_db_and_tables, dispose_engines
 from utils.get_env import get_app_data_directory_env
 from utils.model_availability import (
@@ -87,6 +89,14 @@ async def app_lifespan(_: FastAPI):
     await create_db_and_tables()
     _bootstrap_auth_from_env()
     await check_llm_and_image_provider_api_or_model_availability()
-    yield
-    # Shutdown: release all database connections to prevent stale/leaked pools.
-    await dispose_engines()
+    cleanup_task = asyncio.create_task(periodic_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        # Shutdown: release all database connections to prevent stale/leaked pools.
+        await dispose_engines()
