@@ -1,0 +1,47 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: presenton-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./app_data:/app_data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_DATA_DIRECTORY: /app_data
+      TEMP_DIRECTORY: /tmp/presenton
+      USER_CONFIG_PATH: /app_data/userConfig.json
+      PRESENTON_APP_ROOT: /app
+      FASTAPI_PUBLIC_URL: ${FASTAPI_PUBLIC_URL:-http://localhost:${BACKEND_PORT:-8000}}
+      MIGRATE_DATABASE_ON_STARTUP: ${MIGRATE_DATABASE_ON_STARTUP:-true}
+      START_OLLAMA: ${START_OLLAMA:-false}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-gpt-image-1.5}
+      MEM0_ENABLED: ${MEM0_ENABLED:-true}
+      MEM0_DIR: ${MEM0_DIR:-/app_data/mem0}
+      MEM0_EMBEDDER_PROVIDER: ${MEM0_EMBEDDER_PROVIDER:-fastembed}
+      MEM0_EMBEDDER_MODEL: ${MEM0_EMBEDDER_MODEL:-BAAI/bge-small-en-v1.5}
+      MEM0_EMBEDDING_DIMS: ${MEM0_EMBEDDING_DIMS:-384}
+      LITEPARSE_DPI: ${LITEPARSE_DPI:-120}
+      LITEPARSE_NUM_WORKERS: ${LITEPARSE_NUM_WORKERS:-1}
+    working_dir: /app/servers/fastapi
+    command: ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: presenton-nginx
+    profiles:
+      - prod
+    depends_on:
+      - backend
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: unless-stopped
