@@ -21,6 +21,10 @@ def get_user_config_path_env():
     return os.getenv("USER_CONFIG_PATH")
 
 
+def get_service_api_key_env():
+    return os.getenv("SERVICE_API_KEY")
+
+
 def get_llm_provider_env():
     return os.getenv("LLM")
 

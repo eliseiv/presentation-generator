@@ -2,10 +2,11 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 
 from api.lifespan import app_lifespan
-from api.middlewares import SessionAuthMiddleware, UserConfigEnvUpdateMiddleware
+from api.middlewares import ServiceApiKeyMiddleware, UserConfigEnvUpdateMiddleware
 from api.v1.auth.router import API_V1_AUTH_ROUTER
 from api.v1.mock.router import API_V1_MOCK_ROUTER
 from api.v1.ppt.router import API_V1_PPT_ROUTER
@@ -23,12 +24,14 @@ Backend API сервиса Presenton для генерации и управле
 - управление темами, шаблонами, шрифтами и слайдами;
 - работа с чат-историей и webhook-подписками.
 
-Все маршруты `/api/v1/*`, кроме `/api/v1/auth/*`, требуют авторизации.
-Для серверного использования передавайте HTTP Basic Auth с учетными данными
-администратора Presenton. Ключи LLM и image providers берутся из переменных
-окружения или из сохраненной конфигурации приложения. Для OpenAI image
-generation используется `OPENAI_API_KEY`; провайдер изображений по умолчанию -
-`gpt-image-1.5`, при rate limit выполняется fallback на `dall-e-3`.
+Все маршруты `/api/*` и защищенные ресурсы `/app_data/*` требуют сервисный
+API key из переменной окружения `SERVICE_API_KEY`. Передавайте ключ в
+заголовке `X-API-Key` или как `Authorization: Bearer <SERVICE_API_KEY>`.
+
+Ключи LLM и image providers берутся из переменных окружения или из сохраненной
+конфигурации приложения. Для OpenAI image generation используется
+`OPENAI_API_KEY`; провайдер изображений по умолчанию - `gpt-image-1.5`, при
+rate limit выполняется fallback на `dall-e-3`.
 """
 
 OPENAPI_TAGS = [
@@ -77,6 +80,40 @@ app = FastAPI(
     lifespan=app_lifespan,
 )
 
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        summary=app.summary,
+        description=app.description,
+        routes=app.routes,
+        tags=OPENAPI_TAGS,
+    )
+    openapi_schema.setdefault("components", {}).setdefault("securitySchemes", {})[
+        "ServiceApiKey"
+    ] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Сервисный API key из переменной окружения SERVICE_API_KEY.",
+    }
+
+    for path, path_item in openapi_schema.get("paths", {}).items():
+        if path.startswith("/api/"):
+            for operation in path_item.values():
+                if isinstance(operation, dict):
+                    operation.setdefault("security", [{"ServiceApiKey": []}])
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
 # Routers
 app.include_router(API_V1_PPT_ROUTER)
 app.include_router(API_V1_WEBHOOK_ROUTER)
@@ -104,4 +141,4 @@ app.add_middleware(
 )
 
 app.add_middleware(UserConfigEnvUpdateMiddleware)
-app.add_middleware(SessionAuthMiddleware)
+app.add_middleware(ServiceApiKeyMiddleware)

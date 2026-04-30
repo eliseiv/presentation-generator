@@ -16,6 +16,7 @@ services:
       TEMP_DIRECTORY: /tmp/presenton
       USER_CONFIG_PATH: /app_data/userConfig.json
       PRESENTON_APP_ROOT: /app
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-}
       FASTAPI_PUBLIC_URL: ${FASTAPI_PUBLIC_URL:-http://localhost:${BACKEND_PORT:-8000}}
       MIGRATE_DATABASE_ON_STARTUP: ${MIGRATE_DATABASE_ON_STARTUP:-true}
       START_OLLAMA: ${START_OLLAMA:-false}
