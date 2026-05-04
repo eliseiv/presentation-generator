@@ -1,0 +1,106 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build backend image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      tag: ${{ steps.image.outputs.tag }}
+      full_image: ${{ steps.image.outputs.full_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image name
+        id: image
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          TAG="backend-${GITHUB_SHA}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "full_image=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          push: true
+          tags: |
+            ${{ steps.image.outputs.full_image }}
+            ${{ steps.image.outputs.image }}:backend-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to server
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          BACKEND_IMAGE: ${{ needs.build.outputs.full_image }}
+          APP_DIR: ${{ secrets.SERVER_APP_DIR }}
+          REF_NAME: ${{ github.ref_name }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          envs: BACKEND_IMAGE,APP_DIR,REF_NAME,GHCR_USERNAME,GHCR_TOKEN
+          script_stop: true
+          script: |
+            set -eu
+
+            : "${APP_DIR:?SERVER_APP_DIR secret is required}"
+            : "${BACKEND_IMAGE:?BACKEND_IMAGE is required}"
+
+            cd "$APP_DIR"
+
+            git fetch --all --prune
+            git reset --hard "origin/$REF_NAME"
+            git clean -fd --exclude=.env --exclude=app_data --exclude=secrets
+
+            if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            fi
+
+            export BACKEND_IMAGE
+
+            docker compose -f docker-compose.deploy.yml --profile prod pull
+            docker compose -f docker-compose.deploy.yml --profile prod up -d --remove-orphans
+
+            docker image prune -af --filter "until=24h"
+            docker builder prune -af --filter "until=24h"
+
+            docker compose -f docker-compose.deploy.yml --profile prod ps

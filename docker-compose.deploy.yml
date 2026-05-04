@@ -1,0 +1,63 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
+    pull_policy: always
+    container_name: presenton-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./app_data:/app_data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_DATA_DIRECTORY: /app_data
+      TEMP_DIRECTORY: /tmp/presenton
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      USER_CONFIG_PATH: /app_data/userConfig.json
+      PRESENTON_APP_ROOT: /app
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-}
+      FASTAPI_PUBLIC_URL: ${FASTAPI_PUBLIC_URL:-https://appbackendnew.store}
+      MIGRATE_DATABASE_ON_STARTUP: ${MIGRATE_DATABASE_ON_STARTUP:-true}
+      CLEANUP_TTL_SECONDS: ${CLEANUP_TTL_SECONDS:-7200}
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-600}
+      START_OLLAMA: ${START_OLLAMA:-false}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-gpt-image-1.5}
+      MEM0_ENABLED: ${MEM0_ENABLED:-true}
+      MEM0_DIR: ${MEM0_DIR:-/app_data/mem0}
+      MEM0_EMBEDDER_PROVIDER: ${MEM0_EMBEDDER_PROVIDER:-fastembed}
+      MEM0_EMBEDDER_MODEL: ${MEM0_EMBEDDER_MODEL:-BAAI/bge-small-en-v1.5}
+      MEM0_EMBEDDING_DIMS: ${MEM0_EMBEDDING_DIMS:-384}
+      LITEPARSE_DPI: ${LITEPARSE_DPI:-120}
+      LITEPARSE_NUM_WORKERS: ${LITEPARSE_NUM_WORKERS:-1}
+    working_dir: /app/servers/fastapi
+    command: ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: presenton-nginx
+    profiles:
+      - prod
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: unless-stopped

@@ -20,6 +20,7 @@ container.db
 .next-build
 .cursor
 .agents
+secrets/
 skills-lock.json
 .codex/
 

@@ -17,26 +17,6 @@ from utils.path_helpers import get_resource_path
 
 OPENAPI_DESCRIPTION = """
 Backend API сервиса Presenton для iOS-приложения и других внешних клиентов.
-
-## Быстрый старт для iOS
-
-Рекомендуемый flow для мобильного приложения:
-
-1. Нажмите **Authorize** в Swagger и вставьте `SERVICE_API_KEY`.
-2. Вызовите `POST /api/v1/ppt/presentation/generate/async`.
-3. Сохраните `id` задачи из ответа.
-4. Проверяйте `GET /api/v1/ppt/presentation/status/{id}` каждые 3-5 секунд.
-5. Когда `status=completed`, возьмите `data.path`.
-6. Скачайте файл по URL: `https://appbackendnew.store` + `data.path`.
-
-Все маршруты `/api/*` и защищенные ресурсы `/app_data/*` требуют сервисный
-API key из переменной окружения `SERVICE_API_KEY`. Передавайте ключ в
-заголовке `X-API-Key` или как `Authorization: Bearer <SERVICE_API_KEY>`.
-
-Ключи LLM и image providers берутся из переменных окружения или из сохраненной
-конфигурации приложения. Для OpenAI image generation используется
-`OPENAI_API_KEY`; провайдер изображений по умолчанию - `gpt-image-1.5`, при
-rate limit выполняется fallback на `dall-e-3`.
 """
 
 
