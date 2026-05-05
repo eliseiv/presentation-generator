@@ -13,10 +13,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     reload = args.reload == "true"
-    host = "127.0.0.1"
+    host = os.getenv("FASTAPI_HOST", "127.0.0.1")
 
     # PPTX-to-HTML export and other in-process callers resolve `/app_data` assets here.
-    os.environ.setdefault("FASTAPI_PUBLIC_URL", f"http://{host}:{args.port}")
+    public_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    os.environ.setdefault("FASTAPI_PUBLIC_URL", f"http://{public_host}:{args.port}")
 
     uvicorn.run(
         "api.main:app",

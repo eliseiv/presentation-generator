@@ -10,13 +10,93 @@ import { useCustomTemplateDetails } from "@/app/hooks/useCustomTemplates";
 import { updateSlideContent } from "@/store/slices/presentationGeneration";
 import { useDispatch } from "react-redux";
 import { Loader2 } from "lucide-react";
+import { usePathname } from "next/navigation";
 
+
+function toText(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (value == null) return "";
+    return String(value);
+}
+
+function collectItems(content: any): { title: string; body: string }[] {
+    const source = Array.isArray(content?.bulletPoints)
+        ? content.bulletPoints
+        : Array.isArray(content?.items)
+            ? content.items
+            : Array.isArray(content?.metrics)
+                ? content.metrics
+                : [];
+
+    return source
+        .slice(0, 6)
+        .map((item: any) => ({
+            title: toText(item?.title || item?.label || item?.value || item?.heading),
+            body: toText(item?.body || item?.description || item?.text || item?.subtitle),
+        }))
+        .filter((item: { title: string; body: string }) => item.title || item.body);
+}
+
+function findImageUrl(value: any): string {
+    if (!value || typeof value !== "object") return "";
+    if (typeof value.__image_url__ === "string") return value.__image_url__;
+    if (typeof value.url === "string") return value.url;
+    if (typeof value.src === "string") return value.src;
+    for (const nestedValue of Object.values(value)) {
+        const found = findImageUrl(nestedValue);
+        if (found) return found;
+    }
+    return "";
+}
+
+function ExportFallbackSlide({ data }: { data: any }) {
+    const title = toText(data?.title || data?.heading || "Generated Slide");
+    const description = toText(data?.description || data?.body || data?.subtitle);
+    const items = collectItems(data);
+    const imageUrl = findImageUrl(data);
+
+    return (
+        <div className="w-full rounded-sm max-w-[1280px] shadow-lg max-h-[720px] aspect-video bg-white relative z-20 mx-auto overflow-hidden">
+            <div className="flex h-full gap-10 p-12">
+                <div className="flex-1 flex flex-col justify-center">
+                    <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-6">{title}</h1>
+                    {description && <p className="text-xl text-gray-700 leading-relaxed mb-8">{description}</p>}
+                    {items.length > 0 && (
+                        <div className="grid grid-cols-1 gap-4">
+                            {items.map((item, index) => (
+                                <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                                    {item.title && <div className="text-lg font-semibold text-gray-900">{item.title}</div>}
+                                    {item.body && <div className="text-base text-gray-700 mt-1">{item.body}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                {imageUrl && (
+                    <div className="w-[38%] flex items-center justify-center">
+                        <img src={imageUrl} alt={title} className="w-full h-[70%] object-cover rounded-2xl shadow-md" />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
 
 
 
 export const V1ContentRender = ({ slide, isEditMode, theme }: { slide: any, isEditMode: boolean, theme?: any, enableEditMode?: boolean }) => {
     const dispatch = useDispatch();
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const pathname = usePathname();
+    const exportSlideData = {
+        ...slide.content,
+        _logo_url__: theme ? theme.logo_url : null,
+        __companyName__: (theme && theme.company_name) ? theme.company_name : null,
+    };
+
+    if (pathname?.startsWith("/pdf-maker")) {
+        return <ExportFallbackSlide data={exportSlideData} />;
+    }
 
 
     const customTemplateId = slide.layout_group.startsWith("custom-") ? slide.layout_group.split("custom-")[1] : slide.layout_group;

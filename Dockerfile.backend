@@ -73,6 +73,7 @@ ARG INSTALL_LIBREOFFICE=true
 
 ENV APP_DATA_DIRECTORY=/app_data \
     TEMP_DIRECTORY=/tmp/presenton \
+    FASTAPI_HOST=0.0.0.0 \
     FASTAPI_PUBLIC_URL=http://127.0.0.1:8000 \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     USER_CONFIG_PATH=/app_data/userConfig.json \

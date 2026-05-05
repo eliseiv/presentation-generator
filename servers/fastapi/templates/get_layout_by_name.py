@@ -153,7 +153,7 @@ def _build_default_layout(layout_name: str) -> PresentationLayoutModel:
         ordered=False,
         slides=[
             {
-                "id": layout_id,
+                "id": f"{layout_name}:{layout_id}",
                 "name": name,
                 "description": f"{name} layout for generated presentations.",
                 "json_schema": GENERIC_SLIDE_SCHEMA,
