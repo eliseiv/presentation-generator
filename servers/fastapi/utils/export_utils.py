@@ -19,7 +19,7 @@ def _get_next_public_fastapi_url() -> str | None:
 
 
 def _build_presentation_export_url(presentation_id: uuid.UUID) -> tuple[str, str | None]:
-    params = {"id": str(presentation_id)}
+    params = {"id": str(presentation_id), "exportCookie": "internal-export"}
     fastapi_url = _get_next_public_fastapi_url()
     if fastapi_url:
         params["fastapiUrl"] = fastapi_url

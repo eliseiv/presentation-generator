@@ -26,6 +26,21 @@ RUN --mount=type=cache,target=/root/.cache \
     /opt/venv/bin/python scripts/warm_fastembed_cache.py
 
 
+FROM node:20-bookworm-slim AS nextjs-builder
+
+WORKDIR /app/servers/nextjs
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY servers/nextjs/package.json servers/nextjs/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY servers/nextjs /app/servers/nextjs
+RUN npm run build \
+    && rm -rf .next-build/cache
+
+
 FROM node:20-bookworm-slim AS assets-builder
 
 WORKDIR /app
@@ -58,6 +73,7 @@ ARG INSTALL_LIBREOFFICE=true
 
 ENV APP_DATA_DIRECTORY=/app_data \
     TEMP_DIRECTORY=/tmp/presenton \
+    FASTAPI_PUBLIC_URL=http://127.0.0.1:8000 \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     USER_CONFIG_PATH=/app_data/userConfig.json \
     EXPORT_PACKAGE_ROOT=/app/presentation-export \
@@ -65,10 +81,11 @@ ENV APP_DATA_DIRECTORY=/app_data \
     BUILT_PYTHON_MODULE_PATH=/app/presentation-export/py/convert-linux-x64 \
     PRESENTON_APP_ROOT=/app \
     PATH="/opt/venv/bin:${PATH}" \
+    NODE_ENV=production \
     START_OLLAMA=false
 
 RUN set -eux; \
-    packages="ca-certificates curl chromium fontconfig imagemagick zstd"; \
+    packages="ca-certificates curl chromium nginx fontconfig imagemagick zstd"; \
     if [ "$INSTALL_LIBREOFFICE" = "true" ]; then packages="$packages libreoffice"; fi; \
     if [ "$INSTALL_TESSERACT" = "true" ]; then packages="$packages tesseract-ocr tesseract-ocr-eng"; fi; \
     apt-get update; \
@@ -87,7 +104,14 @@ COPY --from=assets-builder /app/document-extraction-liteparse /app/document-extr
 COPY --from=assets-builder /app/presentation-export /app/presentation-export
 COPY --from=assets-builder /app/scripts/sync-presentation-export.cjs /app/scripts/sync-presentation-export.cjs
 
-EXPOSE 8000
+COPY --from=nextjs-builder /app/servers/nextjs/.next-build/standalone/ /app/servers/nextjs/
+COPY --from=nextjs-builder /app/servers/nextjs/public /app/servers/nextjs/public
+COPY --from=nextjs-builder /app/servers/nextjs/.next-build/static /app/servers/nextjs/.next-build/static
 
-WORKDIR /app/servers/fastapi
-CMD ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+COPY start.js LICENSE NOTICE ./
+COPY nginx.internal.conf /etc/nginx/nginx.conf
+
+EXPOSE 80 8000
+
+WORKDIR /app
+CMD ["node", "/app/start.js"]

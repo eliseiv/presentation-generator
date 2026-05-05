@@ -27,18 +27,24 @@ export async function GET(
   }
 
   const exportCookie = request.headers.get("x-export-cookie")?.trim();
-  if (!exportCookie) {
+  const serviceApiKey = process.env.SERVICE_API_KEY?.trim();
+  if (!exportCookie && !serviceApiKey) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
 
   const presentationUrl = `${getFastApiBaseUrl()}/api/v1/ppt/presentation/${id}`;
+  const headers: Record<string, string> = {};
+  if (serviceApiKey) {
+    headers["X-API-Key"] = serviceApiKey;
+  }
+  if (exportCookie) {
+    headers["Cookie"] = exportCookie;
+  }
 
   try {
     const response = await fetch(presentationUrl, {
       method: "GET",
-      headers: {
-        Cookie: exportCookie,
-      },
+      headers,
       cache: "no-store",
     });
 
