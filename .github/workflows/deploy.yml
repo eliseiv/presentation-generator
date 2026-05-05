@@ -97,8 +97,29 @@ jobs:
 
             export BACKEND_IMAGE
 
-            docker compose -f docker-compose.deploy.yml --profile prod pull
-            docker compose -f docker-compose.deploy.yml --profile prod up -d --remove-orphans
+            retry() {
+              attempt=1
+              max_attempts=5
+              delay=15
+              until "$@"; do
+                if [ "$attempt" -ge "$max_attempts" ]; then
+                  echo "Command failed after ${attempt} attempts: $*" >&2
+                  return 1
+                fi
+                echo "Command failed, retrying in ${delay}s (${attempt}/${max_attempts}): $*" >&2
+                attempt=$((attempt + 1))
+                sleep "$delay"
+                delay=$((delay * 2))
+              done
+            }
+
+            echo "DNS check for ghcr.io:"
+            getent hosts ghcr.io || true
+
+            retry docker pull "$BACKEND_IMAGE"
+            retry docker pull nginx:1.27-alpine
+
+            docker compose -f docker-compose.deploy.yml --profile prod up -d --remove-orphans --no-build
 
             docker image prune -af --filter "until=24h"
             docker builder prune -af --filter "until=24h"
