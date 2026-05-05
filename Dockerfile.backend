@@ -108,6 +108,7 @@ COPY --from=assets-builder /app/scripts/sync-presentation-export.cjs /app/script
 COPY --from=nextjs-builder /app/servers/nextjs/.next-build/standalone/ /app/servers/nextjs/
 COPY --from=nextjs-builder /app/servers/nextjs/public /app/servers/nextjs/public
 COPY --from=nextjs-builder /app/servers/nextjs/.next-build/static /app/servers/nextjs/.next-build/static
+COPY --from=nextjs-builder /app/servers/nextjs/app/presentation-templates /app/servers/nextjs/app/presentation-templates
 
 COPY start.js LICENSE NOTICE ./
 COPY nginx.internal.conf /etc/nginx/nginx.conf

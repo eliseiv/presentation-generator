@@ -1,3 +1,6 @@
+import json
+
+import aiohttp
 from fastapi import HTTPException
 
 from constants.presentation import DEFAULT_TEMPLATES
@@ -163,6 +166,20 @@ def _build_default_layout(layout_name: str) -> PresentationLayoutModel:
     )
 
 
+async def _get_layout_from_next_schema(layout_name: str) -> PresentationLayoutModel:
+    url = f"http://127.0.0.1/api/template?group={layout_name}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Template '{layout_name}' not found: {error_text}",
+                )
+            layout_json = json.loads(await response.text())
+    return PresentationLayoutModel(**layout_json)
+
+
 async def get_layout_by_name(layout_name: str) -> PresentationLayoutModel:
     normalized_layout_name = (layout_name or "general").strip()
     if normalized_layout_name.startswith("custom-"):
@@ -171,4 +188,12 @@ async def get_layout_by_name(layout_name: str) -> PresentationLayoutModel:
             detail="Custom templates are not available in backend-only mode.",
         )
 
-    return _build_default_layout(normalized_layout_name)
+    try:
+        return await _get_layout_from_next_schema(normalized_layout_name)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Fallback is only for local/unit execution without the bundled Next.js server.
+        # Docker production should use real frontend schemas from /schema.
+        print(f"Falling back to built-in template schema for {normalized_layout_name}: {exc}")
+        return _build_default_layout(normalized_layout_name)

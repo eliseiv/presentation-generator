@@ -52,6 +52,7 @@ async function getAuthStatus(request: NextRequest): Promise<AuthStatus> {
 function isApiAuthExempt(pathname: string): boolean {
   return (
     pathname.startsWith("/api/v1/auth/") ||
+    pathname === "/api/template" ||
     pathname === "/api/telemetry-status" ||
     pathname.startsWith("/api/export-presentation-data/")
   );
