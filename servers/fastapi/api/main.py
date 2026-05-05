@@ -16,54 +16,68 @@ from utils.path_helpers import get_resource_path
 
 
 OPENAPI_DESCRIPTION = """
-Backend API сервиса Presenton для iOS-приложения и других внешних клиентов.
+Документация для интеграции iOS-приложения с backend сервиса Presenton.
+
+В Swagger оставлены только endpoint-ы, которые нужны мобильному приложению:
+
+1. создать задачу генерации презентации;
+2. проверить статус генерации;
+3. скачать готовый PPTX/PDF файл;
+4. опционально загрузить файлы-источники;
+5. опционально выполнить синхронную генерацию для тестов.
+
+## Авторизация
+
+Все API-запросы требуют сервисный API key из переменной окружения
+`SERVICE_API_KEY`.
+
+Передавайте ключ через кнопку **Authorize** в Swagger или заголовком:
+
+```http
+X-API-Key: <SERVICE_API_KEY>
+```
+
+## Рекомендуемый Flow Для iOS
+
+1. `POST /api/v1/ppt/presentation/generate/async`
+2. Сохранить `id` задачи из ответа.
+3. Каждые 3-5 секунд вызывать `GET /api/v1/ppt/presentation/status/{id}`.
+4. Когда `status=completed`, взять `data.path`.
+5. Скачать файл по URL: `https://appbackendnew.store` + `data.path`.
+
+Файлы результата хранятся на сервере ограниченное время: TTL 2 часа.
 """
 
 
 OPENAPI_TAGS = [
     {
-        "name": "iOS Flow",
-        "description": (
-            "Минимальный набор endpoint-ов для iOS: создать async-задачу, "
-            "проверить статус, скачать PPTX/PDF по `data.path`. "
-            "Все запросы требуют `X-API-Key`."
-        ),
+        "name": "1. Создание презентации",
+        "description": "Запуск генерации презентации. Для iOS рекомендуется async endpoint.",
     },
     {
-        "name": "Auth",
-        "description": "Настройка, проверка и завершение сессии администратора.",
+        "name": "2. Проверка статуса",
+        "description": "Polling статуса async-задачи до completed или error.",
     },
     {
-        "name": "Presentation",
-        "description": "Создание, генерация, экспорт, получение и редактирование презентаций.",
+        "name": "3. Скачивание результата",
+        "description": "Скачивание готового PPTX/PDF файла по path из completed-задачи.",
     },
     {
-        "name": "Images",
-        "description": "Поиск, генерация, загрузка и удаление изображений для презентаций.",
+        "name": "4. Загрузка файлов",
+        "description": "Опциональная загрузка PDF/DOCX/TXT/изображений как источников.",
     },
-    {"name": "Files", "description": "Загрузка и разбор файлов-источников."},
-    {"name": "Slide", "description": "Редактирование отдельных слайдов."},
-    {"name": "Chat", "description": "Диалоги и сообщения ассистента по презентации."},
-    {"name": "Outlines", "description": "Потоковая генерация структуры презентации."},
-    {"name": "Themes", "description": "Управление темами презентаций."},
-    {"name": "V3 Theme", "description": "Генерация темы презентации."},
-    {"name": "PPTX Slides", "description": "Импорт и обработка PPTX-слайдов."},
-    {"name": "PPTX Fonts", "description": "Извлечение и обработка шрифтов из PPTX."},
-    {"name": "PDF Slides", "description": "Импорт и обработка PDF-слайдов."},
-    {"name": "OpenAI", "description": "Проверка доступных моделей OpenAI."},
-    {"name": "Google", "description": "Проверка доступных моделей Google."},
-    {"name": "Anthropic", "description": "Проверка доступных моделей Anthropic."},
-    {"name": "Ollama", "description": "Список, статус и загрузка локальных моделей Ollama."},
-    {"name": "Webhook", "description": "Подписка и отписка от webhook-событий."},
-    {"name": "Mock", "description": "Тестовые маршруты для разработки."},
-    {"name": "Icons", "description": "Поиск иконок для слайдов."},
-    {"name": "fonts", "description": "Загрузка, список и удаление пользовательских шрифтов."},
-    {"name": "slide-to-html", "description": "Преобразование слайдов в HTML."},
-    {"name": "html-to-react", "description": "Преобразование HTML в React-компоненты."},
-    {"name": "html-edit", "description": "Редактирование HTML-представления слайда."},
-    {"name": "Layout Management", "description": "Управление пользовательскими layout-шаблонами."},
-    {"name": "template-management", "description": "Управление шаблонами презентаций."},
+    {
+        "name": "5. Синхронная генерация",
+        "description": "Блокирующая генерация для коротких тестов через Swagger.",
+    },
 ]
+
+IOS_OPENAPI_PATHS = {
+    "/api/v1/ppt/presentation/generate/async": {"post"},
+    "/api/v1/ppt/presentation/status/{id}": {"get"},
+    "/api/v1/ppt/presentation/generate": {"post"},
+    "/api/v1/ppt/files/upload": {"post"},
+}
 
 app = FastAPI(
     title="Presenton Backend API",
@@ -87,6 +101,8 @@ def custom_openapi():
         routes=app.routes,
         tags=OPENAPI_TAGS,
     )
+    _filter_ios_openapi_paths(openapi_schema)
+    _add_download_endpoint_doc(openapi_schema)
     openapi_schema.setdefault("components", {}).setdefault("securitySchemes", {})[
         "ServiceApiKey"
     ] = {
@@ -109,6 +125,81 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+
+def _filter_ios_openapi_paths(openapi_schema: dict) -> None:
+    filtered_paths = {}
+    for path, allowed_methods in IOS_OPENAPI_PATHS.items():
+        path_item = openapi_schema.get("paths", {}).get(path)
+        if not path_item:
+            continue
+        filtered_path_item = {
+            method: operation
+            for method, operation in path_item.items()
+            if method in allowed_methods
+        }
+        if filtered_path_item:
+            filtered_paths[path] = filtered_path_item
+
+    openapi_schema["paths"] = filtered_paths
+
+
+def _add_download_endpoint_doc(openapi_schema: dict) -> None:
+    openapi_schema.setdefault("paths", {})["/app_data/exports/{file_path}"] = {
+        "get": {
+            "tags": ["3. Скачивание результата"],
+            "summary": "Скачать готовый PPTX/PDF файл",
+            "description": (
+                "Скачивает файл, путь к которому вернулся в `data.path` после "
+                "успешного завершения генерации.\n\n"
+                "В Swagger этот endpoint описан для документации. На практике "
+                "`file_path` - это часть пути после `/app_data/exports/`.\n\n"
+                "Пример: если `data.path` равен "
+                "`/app_data/exports/demo/result.pptx`, полный URL будет "
+                "`https://appbackendnew.store/app_data/exports/demo/result.pptx`.\n\n"
+                "Для iOS скачивание выполняется обычным download-запросом с "
+                "заголовком `X-API-Key`."
+            ),
+            "operationId": "downloadGeneratedPresentationFile",
+            "security": [{"ServiceApiKey": []}],
+            "parameters": [
+                {
+                    "name": "file_path",
+                    "in": "path",
+                    "required": True,
+                    "schema": {
+                        "type": "string",
+                        "example": "d3000f96-096c-4768-b67b-e99aed029b57/result.pptx",
+                    },
+                    "description": "Путь к файлу внутри `app_data/exports`.",
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Файл PPTX/PDF.",
+                    "content": {
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation": {
+                            "schema": {"type": "string", "format": "binary"}
+                        },
+                        "application/pdf": {
+                            "schema": {"type": "string", "format": "binary"}
+                        },
+                    },
+                },
+                "401": {
+                    "description": "API key не передан или неверный.",
+                    "content": {
+                        "application/json": {
+                            "example": {"detail": "Invalid or missing API key"}
+                        }
+                    },
+                },
+                "404": {
+                    "description": "Файл не найден или уже удален по TTL.",
+                },
+            },
+        }
+    }
 
 
 def _set_operation(
@@ -182,10 +273,8 @@ def _set_error_examples(operation: dict) -> None:
     }
 
 
-def _add_ios_tag(operation: dict) -> None:
-    tags = operation.setdefault("tags", [])
-    if "iOS Flow" not in tags:
-        operation["tags"] = ["iOS Flow", *tags]
+def _set_tags(operation: dict, *tags: str) -> None:
+    operation["tags"] = list(tags)
 
 
 def _apply_swagger_examples(openapi_schema: dict) -> None:
@@ -212,7 +301,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         response_description="Путь к готовому файлу презентации и ID презентации.",
     )
     if generate_operation:
-        _add_ios_tag(generate_operation)
+        _set_tags(generate_operation, "5. Синхронная генерация")
         _set_error_examples(generate_operation)
         _set_json_request_examples(
             generate_operation,
@@ -301,7 +390,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         response_description="Задача фоновой генерации создана.",
     )
     if async_operation:
-        _add_ios_tag(async_operation)
+        _set_tags(async_operation, "1. Создание презентации")
         _set_error_examples(async_operation)
         _set_json_request_examples(
             async_operation,
@@ -358,7 +447,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         response_description="Текущее состояние задачи.",
     )
     if status_operation:
-        _add_ios_tag(status_operation)
+        _set_tags(status_operation, "2. Проверка статуса")
         _set_error_examples(status_operation)
         _set_json_response_example(
             status_operation,
@@ -392,7 +481,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         response_description="Список путей загруженных файлов.",
     )
     if upload_operation:
-        _add_ios_tag(upload_operation)
+        _set_tags(upload_operation, "4. Загрузка файлов")
         _set_error_examples(upload_operation)
         _set_json_response_example(
             upload_operation,
