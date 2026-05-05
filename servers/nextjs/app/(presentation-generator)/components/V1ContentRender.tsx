@@ -10,7 +10,6 @@ import { useCustomTemplateDetails } from "@/app/hooks/useCustomTemplates";
 import { updateSlideContent } from "@/store/slices/presentationGeneration";
 import { useDispatch } from "react-redux";
 import { Loader2 } from "lucide-react";
-import { usePathname } from "next/navigation";
 
 
 function toText(value: unknown): string {
@@ -87,17 +86,6 @@ function ExportFallbackSlide({ data }: { data: any }) {
 export const V1ContentRender = ({ slide, isEditMode, theme }: { slide: any, isEditMode: boolean, theme?: any, enableEditMode?: boolean }) => {
     const dispatch = useDispatch();
     const containerRef = useRef<HTMLDivElement | null>(null);
-    const pathname = usePathname();
-    const exportSlideData = {
-        ...slide.content,
-        _logo_url__: theme ? theme.logo_url : null,
-        __companyName__: (theme && theme.company_name) ? theme.company_name : null,
-    };
-
-    if (pathname?.startsWith("/pdf-maker")) {
-        return <ExportFallbackSlide data={exportSlideData} />;
-    }
-
 
     const customTemplateId = slide.layout_group.startsWith("custom-") ? slide.layout_group.split("custom-")[1] : slide.layout_group;
     const isCustomTemplate = uuidValidate(customTemplateId) || slide.layout_group.startsWith("custom-");
@@ -150,14 +138,7 @@ export const V1ContentRender = ({ slide, isEditMode, theme }: { slide: any, isEd
                 </div>
             )
         }
-        return (
-            <div className="flex flex-col items-center justify-center aspect-video h-full bg-gray-100 rounded-lg">
-                <p className="text-gray-600 text-center text-base">
-                    Layout &quot;{slide.layout}&quot; not found in &quot;
-                    {slide.layout_group}&quot; Template
-                </p>
-            </div>
-        );
+        return <ExportFallbackSlide data={slide.content} />;
     }
     const LayoutComp = Layout as React.ComponentType<{ data: any }>;
 
