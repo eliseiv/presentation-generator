@@ -15,3 +15,4 @@ Presenton is an open source document engine, not a closed design platform. It is
 Our ambition is to become the open foundation for local, private, AI powered visual document generation.
 
 Beautiful visual assets. Generated locally. Owned by the user.
+ 
