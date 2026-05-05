@@ -47,34 +47,6 @@ GENERIC_SLIDE_SCHEMA = {
                 },
             },
         },
-        "items": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 6,
-            "items": {
-                "type": "object",
-                "additionalProperties": True,
-                "properties": {
-                    "title": {"type": "string", "maxLength": 80},
-                    "description": {"type": "string", "maxLength": 220},
-                    "body": {"type": "string", "maxLength": 220},
-                },
-            },
-        },
-        "metrics": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 6,
-            "items": {
-                "type": "object",
-                "additionalProperties": True,
-                "properties": {
-                    "label": {"type": "string", "maxLength": 80},
-                    "value": {"type": "string", "maxLength": 40},
-                    "description": {"type": "string", "maxLength": 160},
-                },
-            },
-        },
         "image": {
             "type": "object",
             "additionalProperties": True,
@@ -177,7 +149,44 @@ async def _get_layout_from_next_schema(layout_name: str) -> PresentationLayoutMo
                     detail=f"Template '{layout_name}' not found: {error_text}",
                 )
             layout_json = json.loads(await response.text())
-    return PresentationLayoutModel(**layout_json)
+    return _filter_layouts_for_api(PresentationLayoutModel(**layout_json))
+
+
+def _filter_layouts_for_api(layout: PresentationLayoutModel) -> PresentationLayoutModel:
+    """
+    iOS/API generation should favor presentation-like slides.
+
+    Table/chart-heavy layouts are useful in the full web editor, but they make
+    generic mobile-generated decks look like spreadsheets when the source
+    prompt does not explicitly ask for tables/charts. Keep them out of the
+    automatic layout pool.
+    """
+    excluded_terms = (
+        "table",
+        "chart",
+        "contents",
+        "toc",
+        "dashboard",
+        "metrics",
+    )
+
+    filtered_slides = []
+    for slide in layout.slides:
+        searchable = " ".join(
+            [
+                slide.id or "",
+                slide.name or "",
+                slide.description or "",
+            ]
+        ).lower()
+        if any(term in searchable for term in excluded_terms):
+            continue
+        filtered_slides.append(slide)
+
+    if len(filtered_slides) >= 3:
+        layout.slides = filtered_slides
+
+    return layout
 
 
 async def get_layout_by_name(layout_name: str) -> PresentationLayoutModel:
@@ -196,4 +205,4 @@ async def get_layout_by_name(layout_name: str) -> PresentationLayoutModel:
         # Fallback is only for local/unit execution without the bundled Next.js server.
         # Docker production should use real frontend schemas from /schema.
         print(f"Falling back to built-in template schema for {normalized_layout_name}: {exc}")
-        return _build_default_layout(normalized_layout_name)
+        return _filter_layouts_for_api(_build_default_layout(normalized_layout_name))
