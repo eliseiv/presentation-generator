@@ -46,13 +46,69 @@ X-API-Key: <SERVICE_API_KEY>
 5. Скачать файл по URL: `https://appbackendnew.store` + `data.path`.
 
 Файлы результата хранятся на сервере ограниченное время: TTL 2 часа.
+
+## Допустимые Значения Параметров
+
+### `template` — шаблон оформления
+
+| Значение | Описание |
+|---|---|
+| `general` *(по умолчанию)* | Универсальный набор: intro, bullets, metrics, table, team, quote. |
+| `modern` | Современный pitch-deck: intro pitch, image+text, charts, metrics. |
+| `standard` | Деловой, классический: header+counter, splits, team cards. |
+| `swift` | Компактный, тезисный: simple bullets, timeline, metrics numbers. |
+
+### `tone` — тон текста
+
+| Значение | Описание |
+|---|---|
+| `default` *(по умолчанию)* | Нейтральный универсальный тон. |
+| `casual` | Разговорный, дружественный. |
+| `professional` | Деловой, сдержанный (executives, отчёты). |
+| `funny` | Лёгкий с юмором. |
+| `educational` | Обучающий, объясняющий шаг за шагом. |
+| `sales_pitch` | Продающий, акцент на выгодах. |
+
+### `verbosity` — плотность текста
+
+| Значение | Описание |
+|---|---|
+| `concise` | Минимум текста, тезисами. |
+| `standard` *(по умолчанию)* | Сбалансированный объём. |
+| `text-heavy` | Развёрнутые описания, длинные параграфы. |
+
+### `export_as` — формат файла
+
+| Значение | Описание |
+|---|---|
+| `pptx` *(по умолчанию)* | PowerPoint, редактируемый. |
+| `pdf` | PDF для распространения. |
+
+### `language` — язык
+
+Свободная строка с английским названием языка: `English`, `Russian`,
+`Spanish`, `German`, `French`, `Chinese`, `Japanese`, `Arabic` и т. д.
+Если не указано — определяется по содержимому `content`.
+
+### `n_slides` — количество слайдов
+
+Целое число от **1 до 50**. Если `include_table_of_contents=true`,
+минимум **3**. Если не указано — модель сама подберёт количество.
+
+### `instructions` — кастомизация
+
+Произвольная строка с дополнительными инструкциями для LLM. Примеры:
+
+- Имя автора: `"Use 'Александр Иванов' as the presenter name."`
+- Фокус: `"Focus on practical examples for healthcare professionals."`
+- Структура: `"Start with a problem statement, then 3 solutions, then ROI."`
 """
 
 
 OPENAPI_TAGS = [
     {
         "name": "1. Создание презентации",
-        "description": "Запуск генерации презентации. Для iOS рекомендуется async endpoint.",
+        "description": "Запуск генерации презентации",
     },
     {
         "name": "2. Проверка статуса",
@@ -370,13 +426,8 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         "post",
         summary="Поставить генерацию презентации в очередь",
         description=(
-            "**Основной endpoint для iOS.** Запускает генерацию в фоне и сразу "
+            "**Основной endpoint.** Запускает генерацию в фоне и сразу "
             "возвращает task id.\n\n"
-            "Что делает iOS после ответа:\n\n"
-            "1. Сохраняет `id` из ответа.\n"
-            "2. Каждые 3-5 секунд вызывает "
-            "`GET /api/v1/ppt/presentation/status/{id}`.\n"
-            "3. При `status=completed` берет `data.path` и скачивает файл.\n\n"
             "Пример минимального body:\n\n"
             "```json\n"
             "{\n"
@@ -397,10 +448,10 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             {
                 "async_prompt": {
                     "summary": "Асинхронная генерация",
-                    "description": "Рекомендуемый пример для iOS-приложения.",
+                    "description": "Пример:",
                     "value": {
-                        "content": "Create a presentation about AI in healthcare",
-                        "instructions": "Make it clear, visual, and useful for mobile users.",
+                        "content": "Create a presentation about ancient Rome",
+                        "instructions": "Make it clear, visual, and useful.",
                         "tone": "professional",
                         "verbosity": "standard",
                         "web_search": False,
