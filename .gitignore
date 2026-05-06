@@ -28,3 +28,6 @@ skills-lock.json
 presentation-export/index.js
 presentation-export/py/
 .cache/presentation-export/
+legacy
+.claude/
+demo_*.pptx

@@ -39,12 +39,12 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3); urllib.request.urlopen('http://127.0.0.1/schema?group=general', timeout=3)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3); urllib.request.urlopen('http://127.0.0.1/api/template?group=general', timeout=3)",
         ]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 90s
     restart: unless-stopped
 
   nginx:

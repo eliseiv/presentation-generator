@@ -44,7 +44,7 @@ from models.sql.slide import SlideModel
 from models.sql.presentation_layout_code import PresentationLayoutCodeModel
 from models.sse_response import SSECompleteResponse, SSEErrorResponse, SSEResponse
 
-from services.database import get_async_session
+from services.database import async_session_maker, get_async_session
 from services.concurrent_service import CONCURRENT_SERVICE
 from models.sql.presentation import PresentationModel
 from models.sql.async_presentation_generation_status import (
@@ -947,6 +947,42 @@ async def generate_presentation_sync(
         raise HTTPException(status_code=500, detail="Presentation generation failed")
 
 
+async def _run_async_generation(
+    request: GeneratePresentationRequest,
+    presentation_id: uuid.UUID,
+    task_id: str,
+):
+    """
+    Background runner for async presentation generation.
+
+    Owns its own AsyncSession instead of inheriting one from the request scope —
+    request-scoped sessions are closed by FastAPI as soon as the HTTP response
+    flushes, so reusing them here would surface as `Connection is closed` /
+    `InterfaceError` the first time the handler hits the database.
+    """
+    async with async_session_maker() as session:
+        try:
+            async_status = await session.get(
+                AsyncPresentationGenerationTaskModel, task_id
+            )
+            if async_status is None:
+                # Task row was created in the request handler but vanished —
+                # fall back to a fresh in-memory object so we still record
+                # progress.
+                async_status = AsyncPresentationGenerationTaskModel(
+                    id=task_id,
+                    status="pending",
+                    message="Queued for generation",
+                )
+                session.add(async_status)
+                await session.commit()
+            await generate_presentation_handler(
+                request, presentation_id, async_status, session
+            )
+        except Exception:
+            traceback.print_exc()
+
+
 @PRESENTATION_ROUTER.post(
     "/generate/async", response_model=AsyncPresentationGenerationTaskModel
 )
@@ -965,19 +1001,25 @@ async def generate_presentation_async(
         )
         sql_session.add(async_status)
         await sql_session.commit()
+        await sql_session.refresh(async_status)
+
+        # Capture the primary key now; the SQLAlchemy instance is bound to
+        # `sql_session`, which the dependency closes after this function
+        # returns. The background task picks the row up by id from a fresh
+        # session.
+        task_id = async_status.id
 
         background_tasks.add_task(
-            generate_presentation_handler,
+            _run_async_generation,
             request,
             presentation_id,
-            async_status=async_status,
-            sql_session=sql_session,
+            task_id,
         )
         return async_status
 
     except Exception as e:
         if not isinstance(e, HTTPException):
-            print(e)
+            traceback.print_exc()
             e = HTTPException(status_code=500, detail="Presentation generation failed")
 
         raise e

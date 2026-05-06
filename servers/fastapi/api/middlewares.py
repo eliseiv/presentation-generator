@@ -15,6 +15,9 @@ class UserConfigEnvUpdateMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
 class ServiceApiKeyMiddleware(BaseHTTPMiddleware):
     def _requires_auth(self, path: str) -> bool:
         if path.startswith("/api/"):
@@ -35,12 +38,48 @@ class ServiceApiKeyMiddleware(BaseHTTPMiddleware):
 
         return None
 
+    def _is_internal_asset_request(self, request: Request) -> bool:
+        """
+        Bypass auth for loopback-originated requests on /app_data/* and /static/*.
+
+        Headless puppeteer renders the slide deck from inside the container and
+        pulls the slide images via /app_data/images/<uuid>.png — those image
+        requests cannot carry the service API key. They reach FastAPI through
+        the container's internal nginx, which always rewrites X-Real-IP and
+        X-Forwarded-For. External clients always traverse the same nginx, so
+        the only way to tell the two apart is by inspecting the forwarded
+        client IP itself: loopback ⇒ originated inside the container,
+        otherwise ⇒ a real external request that must authenticate.
+        """
+        path = request.url.path
+        if not (path.startswith("/app_data/") or path.startswith("/static/")):
+            return False
+
+        client_host = request.client.host if request.client else None
+        if client_host not in _LOOPBACK_HOSTS:
+            return False
+
+        # Inspect every forwarded-IP hop: if any hop is non-loopback, the
+        # original client is external and must authenticate.
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        for hop in forwarded_for.split(","):
+            hop_ip = hop.strip().split("%", 1)[0]
+            if hop_ip and hop_ip not in _LOOPBACK_HOSTS:
+                return False
+
+        real_ip = (request.headers.get("X-Real-IP") or "").strip()
+        if real_ip and real_ip not in _LOOPBACK_HOSTS:
+            return False
+
+        return True
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
         if (
             request.method == "OPTIONS"
             or not self._requires_auth(path)
+            or self._is_internal_asset_request(request)
         ):
             return await call_next(request)
 
