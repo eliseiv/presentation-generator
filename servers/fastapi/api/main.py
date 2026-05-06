@@ -16,34 +16,7 @@ from utils.path_helpers import get_resource_path
 
 
 OPENAPI_DESCRIPTION = """
-Документация для интеграции iOS-приложения с backend сервиса Presenton.
-
-В Swagger оставлены только endpoint-ы, которые нужны мобильному приложению:
-
-1. создать задачу генерации презентации;
-2. проверить статус генерации;
-3. скачать готовый PPTX/PDF файл;
-4. опционально загрузить файлы-источники;
-5. опционально выполнить синхронную генерацию для тестов.
-
-## Авторизация
-
-Все API-запросы требуют сервисный API key из переменной окружения
-`SERVICE_API_KEY`.
-
-Передавайте ключ через кнопку **Authorize** в Swagger или заголовком:
-
-```http
-X-API-Key: <SERVICE_API_KEY>
-```
-
-## Рекомендуемый Flow Для iOS
-
-1. `POST /api/v1/ppt/presentation/generate/async`
-2. Сохранить `id` задачи из ответа.
-3. Каждые 3-5 секунд вызывать `GET /api/v1/ppt/presentation/status/{id}`.
-4. Когда `status=completed`, взять `data.path`.
-5. Скачать файл по URL: `https://appbackendnew.store` + `data.path`.
+Постарался расписать все красиво
 
 Файлы результата хранятся на сервере ограниченное время: TTL 2 часа.
 
@@ -86,8 +59,7 @@ X-API-Key: <SERVICE_API_KEY>
 
 ### `language` — язык
 
-Свободная строка с английским названием языка: `English`, `Russian`,
-`Spanish`, `German`, `French`, `Chinese`, `Japanese`, `Arabic` и т. д.
+Свободная строка с английским названием языка: `English`, `Russian` и т. д.
 Если не указано — определяется по содержимому `content`.
 
 ### `n_slides` — количество слайдов
@@ -213,8 +185,6 @@ def _add_download_endpoint_doc(openapi_schema: dict) -> None:
                 "Пример: если `data.path` равен "
                 "`/app_data/exports/demo/result.pptx`, полный URL будет "
                 "`https://appbackendnew.store/app_data/exports/demo/result.pptx`.\n\n"
-                "Для iOS скачивание выполняется обычным download-запросом с "
-                "заголовком `X-API-Key`."
             ),
             "operationId": "downloadGeneratedPresentationFile",
             "security": [{"ServiceApiKey": []}],
@@ -340,7 +310,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         "post",
         summary="Сгенерировать презентацию синхронно",
         description=(
-            "**iOS:** используйте этот endpoint только для коротких тестов. "
+            "Используйте этот endpoint только для коротких тестов. "
             "Для production-flow лучше использовать `/generate/async`, потому что "
             "генерация может занять десятки секунд или минуты.\n\n"
             "Создает презентацию из текста, Markdown-слайдов или ранее загруженных "
@@ -431,7 +401,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             "Пример минимального body:\n\n"
             "```json\n"
             "{\n"
-            "  \"content\": \"Create a presentation about AI in healthcare\",\n"
+            "  \"content\": \"Create a presentation about ancient Rome\",\n"
             "  \"n_slides\": 7,\n"
             "  \"language\": \"Russian\",\n"
             "  \"export_as\": \"pptx\"\n"
@@ -492,7 +462,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             "- `pending` - задача еще выполняется;\n"
             "- `completed` - презентация готова, в `data.path` лежит путь к файлу;\n"
             "- `error` - генерация завершилась ошибкой, смотрите поле `error`.\n\n"
-            "Когда `status=completed`, iOS должен собрать download URL:\n\n"
+            "Download URL:\n\n"
             "`https://appbackendnew.store` + `data.path`"
         ),
         response_description="Текущее состояние задачи.",
@@ -523,9 +493,9 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         "post",
         summary="Загрузить файлы-источники",
         description=(
-            "**Опциональный endpoint для iOS.** Используйте его, если презентацию "
+            "Используйте его, если презентацию "
             "нужно создать по PDF/DOCX/TXT/изображениям.\n\n"
-            "1. iOS загружает файлы multipart form-data полем `files`.\n"
+            "1. Загружайте файлы multipart form-data полем `files`.\n"
             "2. API возвращает массив временных путей.\n"
             "3. Эти пути нужно передать в поле `files` запроса `/generate/async`."
         ),
