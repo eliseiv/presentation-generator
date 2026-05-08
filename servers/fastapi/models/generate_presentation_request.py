@@ -173,6 +173,7 @@ class GeneratePresentationRequest(BaseModel):
             "examples": [
                 {
                     "content": "Introduction to Machine Learning",
+                    "slides_markdown": None,
                     "instructions": "Make it practical and suitable for executives.",
                     "tone": "professional",
                     "verbosity": "standard",
@@ -183,6 +184,8 @@ class GeneratePresentationRequest(BaseModel):
                     "include_table_of_contents": False,
                     "include_title_slide": True,
                     "files": None,
+                    "video_url": None,
+                    "source_url": None,
                     "export_as": "pptx",
                     "trigger_webhook": False,
                 }

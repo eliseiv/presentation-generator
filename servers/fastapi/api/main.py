@@ -82,44 +82,10 @@ OPENAPI_DESCRIPTION = """
 | Поле | Что внутри | Сценарий |
 |---|---|---|
 | `content` | строка с темой/текстом | Простой prompt: «AI in healthcare» |
-| `slides_markdown` | массив готовых markdown-слайдов | Полный контроль структуры |
+| `slides_markdown` | массив готовых markdown-слайдов | Если текст есть, нужно только видео сгенерировать |
 | `files` | пути загруженных файлов | PDF/DOCX/TXT/изображения, а также `.mp4/.mov/.mkv/.webm` и `.mp3/.wav/.m4a` |
-| `video_url` | прямая ссылка на видео | Транскрибация Whisper + кадры через GPT-4o Vision (1 кадр/10 сек, до 30 мин) |
-| `source_url` | ссылка на веб-страницу | Wikipedia (REST API) или произвольная статья (trafilatura) |
-
-### Видео — `video_url` или загруженное через `/files/upload`
-
-Pipeline: ffmpeg извлекает аудио (моно 64 kbps) и семплирует 1 кадр каждые
-10 секунд → Whisper транскрибирует речь → GPT-4o Vision одним батчем
-описывает все кадры → итоговый контекст со строками вида
-`[HH:MM:SS] description` идёт в outline-генератор.
-
-Лимит длительности: **30 минут**. Лимит размера загружаемого видео:
-**2 ГБ**. Поддерживаемые расширения: `.mp4`, `.mov`, `.m4v`, `.mkv`,
-`.webm`, `.avi`, `.mpeg`, `.mpg`, `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`,
-`.flac`. Стоимость для 10 мин видео ≈ **$0.30–0.50** (Whisper $0.06 +
-GPT-4o Vision ≈ $0.20 + outline + слайды + DALL-E).
-
-### Веб-страница — `source_url`
-
-Для `*.wikipedia.org` сервис ходит в REST API и забирает чистый текст
-статьи без скрейпа. Для остальных сайтов используется `trafilatura`,
-который вырезает меню/футер/рекламу. Лимит размера страницы — **10 МБ**.
-
-### SSRF-защита
-
-Для `video_url` и `source_url` сервер резолвит DNS и **отказывается**
-обращаться к private IP (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16,
-multicast, reserved). Принимаются только `http(s)://` URL.
-
-### Тайминги (асинхронный режим)
-
-| Источник | Время до готового PPTX |
-|---|---|
-| Только `content` | 30–90 с |
-| `source_url` (Wikipedia) | 30–90 с |
-| `video_url` 10 мин | 130–230 с |
-| `files` (PDF/DOCX) | 60–120 с |
+| `video_url` | прямая ссылка на видео | Кадры через GPT-4o Vision (1 кадр/10 сек, до 30 мин) |
+| `source_url` | ссылка на веб-страницу | Извлечение текста |
 """
 
 
@@ -383,6 +349,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                     "description": "Минимальный пример генерации PPTX из темы.",
                     "value": {
                         "content": "Introduction to Machine Learning",
+                        "slides_markdown": None,
                         "instructions": "Make it practical and suitable for executives.",
                         "tone": "professional",
                         "verbosity": "standard",
@@ -393,6 +360,8 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "include_table_of_contents": False,
                         "include_title_slide": True,
                         "files": None,
+                        "video_url": None,
+                        "source_url": None,
                         "export_as": "pptx",
                         "trigger_webhook": False,
                     },
@@ -531,6 +500,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                     "description": "Минимальный пример: тема + параметры.",
                     "value": {
                         "content": "Create a presentation about ancient Rome",
+                        "slides_markdown": None,
                         "instructions": "Make it clear, visual, and useful.",
                         "tone": "professional",
                         "verbosity": "standard",
@@ -541,6 +511,8 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "include_table_of_contents": False,
                         "include_title_slide": True,
                         "files": None,
+                        "video_url": None,
+                        "source_url": None,
                         "export_as": "pptx",
                         "trigger_webhook": False,
                     },
