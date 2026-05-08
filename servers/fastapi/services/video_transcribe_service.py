@@ -41,6 +41,12 @@ _FRAME_WIDTH = 640                         # downscale frames before VLM
 _VLM_MODEL = "gpt-4o"
 _FFMPEG_TIMEOUT_SEC = 600                  # 10 min wall time for ffmpeg pulls
 
+# Vision API token-per-minute limits cap how many frames we can send in one
+# request. 15 frames @ detail=low ≈ 1300 input tokens including the prompt,
+# which stays comfortably under tight 30K TPM tiers even when chunks run
+# back-to-back.
+_VLM_FRAMES_PER_BATCH = 15
+
 
 class VideoContext(BaseModel):
     duration_sec: float | None
@@ -181,28 +187,31 @@ async def _whisper_transcribe(audio_path: str, language: str | None) -> str:
     return "\n".join(lines).strip()
 
 
-async def _describe_frames(frame_paths: list[str], language: str | None) -> str:
-    if not frame_paths:
-        return ""
-
-    api_key = get_openai_api_key_env()
-    if not api_key:
-        return ""
-
-    client = AsyncOpenAI(api_key=api_key)
-
+async def _describe_frame_batch(
+    client: AsyncOpenAI,
+    frame_paths: list[str],
+    start_index: int,
+    language: str | None,
+) -> str:
+    """
+    Describe one chunk of frames. `start_index` is the global frame number of
+    the first frame in this chunk so timestamps stay correct across batches.
+    """
     user_content: list[dict] = [
         {
             "type": "text",
             "text": (
                 "You are looking at frames sampled from a video, one frame "
-                f"every {_FRAME_SAMPLE_INTERVAL_SEC} seconds. The first frame "
-                "is at 0 s, the second at "
-                f"{_FRAME_SAMPLE_INTERVAL_SEC} s, and so on. For each frame "
-                "produce ONE concise sentence describing what is shown "
-                "(subject, action, on-screen text). Output exactly one line "
-                "per frame in the format `[HH:MM:SS] description`, in "
-                "chronological order, no extra commentary."
+                f"every {_FRAME_SAMPLE_INTERVAL_SEC} seconds. In this batch "
+                f"the first frame is at "
+                f"{_format_timestamp(start_index * _FRAME_SAMPLE_INTERVAL_SEC)}, "
+                f"the next at "
+                f"{_format_timestamp((start_index + 1) * _FRAME_SAMPLE_INTERVAL_SEC)}, "
+                "and so on. For each frame produce ONE concise sentence "
+                "describing what is shown (subject, action, on-screen text). "
+                "Output exactly one line per frame in the format "
+                "`[HH:MM:SS] description`, in chronological order, no extra "
+                "commentary."
                 + (f" Use {language} for the descriptions." if language else "")
             ),
         }
@@ -224,11 +233,39 @@ async def _describe_frames(frame_paths: list[str], language: str | None) -> str:
     response = await client.chat.completions.create(
         model=_VLM_MODEL,
         messages=[{"role": "user", "content": user_content}],
-        max_tokens=4000,
+        max_tokens=40 * len(frame_paths) + 200,
         temperature=0.2,
     )
-    text = (response.choices[0].message.content or "").strip()
-    return text
+    return (response.choices[0].message.content or "").strip()
+
+
+async def _describe_frames(frame_paths: list[str], language: str | None) -> str:
+    if not frame_paths:
+        return ""
+
+    api_key = get_openai_api_key_env()
+    if not api_key:
+        return ""
+
+    client = AsyncOpenAI(api_key=api_key)
+
+    chunks: list[str] = []
+    for batch_start in range(0, len(frame_paths), _VLM_FRAMES_PER_BATCH):
+        batch = frame_paths[batch_start : batch_start + _VLM_FRAMES_PER_BATCH]
+        try:
+            description = await _describe_frame_batch(
+                client, batch, batch_start, language
+            )
+        except Exception as exc:  # rate limit, network, etc.
+            print(
+                f"[video_transcribe] frame batch {batch_start} "
+                f"(size {len(batch)}) failed: {exc}"
+            )
+            continue
+        if description:
+            chunks.append(description)
+
+    return "\n".join(chunks).strip()
 
 
 def _format_timestamp(seconds: float) -> str:

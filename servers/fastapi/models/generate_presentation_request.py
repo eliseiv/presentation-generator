@@ -6,11 +6,16 @@ from enums.verbosity import Verbosity
 
 
 class GeneratePresentationRequest(BaseModel):
-    content: str = Field(
-        ...,
+    content: Optional[str] = Field(
+        default=None,
         description=(
             "Основной текст или тема, на основе которой будет создана презентация. "
-            "Можно передать короткий prompt или развернутый материал."
+            "Можно передать короткий prompt или развернутый материал. "
+            "Поле опциональное — но запрос должен содержать **минимум один** "
+            "из источников: `content`, `slides_markdown`, `files`, "
+            "`video_url`, `source_url`. Если вы передаёте только `video_url` "
+            "или `source_url`, `content` можно не указывать — сервис сам "
+            "сформирует тему."
         ),
         examples=["Introduction to Machine Learning"],
     )
