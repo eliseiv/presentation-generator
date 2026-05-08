@@ -116,26 +116,34 @@ jobs:
             echo "DNS check for ghcr.io:"
             getent hosts ghcr.io || true
 
+            # Free disk BEFORE pulling — every CI build adds a ~3.9 GB
+            # backend image, and "no space left on device" during pull
+            # is the most common failure on long-lived deploy targets.
+            # `docker image prune -af` only removes images not used by
+            # any running container, so the live container's image
+            # stays put.
+            echo "Disk usage before cleanup:"
+            df -h /var/lib | tail -2 || true
+            docker image prune -af || true
+            docker buildx prune -af || true
+            echo "Disk usage after pre-pull cleanup:"
+            df -h /var/lib | tail -2 || true
+
             retry docker pull "$BACKEND_IMAGE"
             retry docker pull nginx:1.27-alpine
 
             docker compose -f docker-compose.deploy.yml --profile prod up -d --remove-orphans --no-build
 
-            # Drop every old presentation-generator-backend tag except the
-            # one we just deployed and :backend-latest. CI tags each build
-            # with the SHA, so without this loop /var/lib/containerd fills
-            # up within a couple of weeks of regular pushes.
+            # Once the new container is running, the previous SHA-tagged
+            # image becomes unused and can go. Whitelist the just-pulled
+            # tag and :backend-latest just in case Docker still considers
+            # them held by something transient.
             IMAGE_REPO="${BACKEND_IMAGE%:*}"
             ACTIVE_TAG="${BACKEND_IMAGE##*:}"
             docker images "$IMAGE_REPO" --format '{{.Tag}}' \
               | grep -vE "^(${ACTIVE_TAG}|backend-latest|<none>)$" \
               | xargs -r -I {} docker rmi -f "${IMAGE_REPO}:{}" || true
-
-            # Catch anything else (dangling layers, replaced base images,
-            # build cache). Dropping the until=24h filter is intentional —
-            # running containers' images are still protected by Docker, so
-            # this is safe.
-            docker image prune -af
-            docker buildx prune -af
+            docker image prune -af || true
+            docker buildx prune -af || true
 
             docker compose -f docker-compose.deploy.yml --profile prod ps
