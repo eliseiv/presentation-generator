@@ -423,6 +423,70 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "export_as": "pptx",
                     },
                 },
+                "video_url": {
+                    "summary": "Генерация по ссылке на видео",
+                    "description": (
+                        "Сервис скачает аудио через ffmpeg, транскрибирует "
+                        "его через Whisper и опишет 1 кадр в 10 секунд через "
+                        "GPT-4o Vision. Лимит длительности — 30 минут."
+                    ),
+                    "value": {
+                        "video_url": "https://dn720706.ca.archive.org/0/items/ElephantsDream/ed_hd.mp4",
+                        "n_slides": 5,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+                "video_upload": {
+                    "summary": "Генерация по загруженному видео-файлу",
+                    "description": (
+                        "Сначала загрузите видео через /api/v1/ppt/files/upload "
+                        "(допускаются `.mp4`, `.mov`, `.mkv`, `.webm`, "
+                        "`.mp3`, `.wav` и др.; до 2 ГБ). Полученный путь "
+                        "передаётся в `files` — далее тот же pipeline, что и "
+                        "для `video_url`."
+                    ),
+                    "value": {
+                        "files": ["/tmp/presenton/abc/lecture.mp4"],
+                        "n_slides": 7,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+                "source_url": {
+                    "summary": "Генерация по ссылке на статью / Wikipedia",
+                    "description": (
+                        "Для `*.wikipedia.org` используется REST API. Для "
+                        "других сайтов сервис скачивает HTML и извлекает "
+                        "основной текст через trafilatura."
+                    ),
+                    "value": {
+                        "source_url": "https://en.wikipedia.org/wiki/Photosynthesis",
+                        "n_slides": 6,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+                "url_with_focus": {
+                    "summary": "URL + дополнительный prompt и instructions",
+                    "description": (
+                        "Можно передать `source_url`/`video_url` ВМЕСТЕ с "
+                        "`content` и `instructions` — сервис добавит контекст "
+                        "из URL к вашему prompt."
+                    ),
+                    "value": {
+                        "source_url": "https://en.wikipedia.org/wiki/Solar_System",
+                        "content": "Make a presentation focused on planets habitability",
+                        "instructions": "Highlight Mars and Europa, skip historical detail",
+                        "n_slides": 7,
+                        "language": "English",
+                        "template": "modern",
+                        "export_as": "pptx",
+                    },
+                },
             },
         )
         _set_json_response_example(
@@ -463,8 +527,8 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             async_operation,
             {
                 "async_prompt": {
-                    "summary": "Асинхронная генерация",
-                    "description": "Пример:",
+                    "summary": "Асинхронная генерация по prompt",
+                    "description": "Минимальный пример: тема + параметры.",
                     "value": {
                         "content": "Create a presentation about ancient Rome",
                         "instructions": "Make it clear, visual, and useful.",
@@ -480,7 +544,67 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "export_as": "pptx",
                         "trigger_webhook": False,
                     },
-                }
+                },
+                "async_video_url": {
+                    "summary": "Асинхронная генерация по видео-URL",
+                    "description": (
+                        "iOS-флоу: ссылка на mp4 + параметры → задача в очереди "
+                        "→ polling /status/{id}. Время до готового PPTX: "
+                        "~130–230 с для 10-минутного видео."
+                    ),
+                    "value": {
+                        "video_url": "https://dn720706.ca.archive.org/0/items/ElephantsDream/ed_hd.mp4",
+                        "n_slides": 7,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+                "async_video_upload": {
+                    "summary": "Асинхронная генерация по загруженному видео",
+                    "description": (
+                        "Шаг 1: POST /api/v1/ppt/files/upload (multipart, "
+                        "поле `files`) → возвращает массив путей. "
+                        "Шаг 2: путь(и) → в это поле `files`."
+                    ),
+                    "value": {
+                        "files": ["/tmp/presenton/abc/recording.mp4"],
+                        "n_slides": 7,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+                "async_source_url": {
+                    "summary": "Асинхронная генерация по веб-ссылке (Wikipedia)",
+                    "description": (
+                        "Сервис подтянет текст статьи и сделает по ней "
+                        "презентацию. Время: ~30–90 с."
+                    ),
+                    "value": {
+                        "source_url": "https://en.wikipedia.org/wiki/Machine_learning",
+                        "n_slides": 7,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
+                "async_combined": {
+                    "summary": "Комбинированный источник (URL + prompt)",
+                    "description": (
+                        "Можно сочетать поля: URL даёт контекст, `content` "
+                        "и `instructions` уточняют фокус."
+                    ),
+                    "value": {
+                        "source_url": "https://en.wikipedia.org/wiki/Photosynthesis",
+                        "content": "Сделай презентацию для школьников 8-9 класса",
+                        "instructions": "Простыми словами, минимум химических формул",
+                        "n_slides": 6,
+                        "language": "Russian",
+                        "template": "general",
+                        "export_as": "pptx",
+                    },
+                },
             },
         )
         _set_json_response_example(
