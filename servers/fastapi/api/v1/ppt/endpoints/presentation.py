@@ -31,6 +31,11 @@ from models.sql.template import TemplateModel
 from services.documents_loader import DocumentsLoader
 from services.webhook_service import WebhookService
 from services.image_generation_service import ImageGenerationService
+from services.url_content_service import fetch_url_text
+from services.video_transcribe_service import (
+    is_video_filename,
+    transcribe_video,
+)
 from services.mem0_presentation_memory_service import (
     MEM0_PRESENTATION_MEMORY_SERVICE,
 )
@@ -505,11 +510,20 @@ async def check_if_api_request_is_valid(
     presentation_id = uuid.uuid4()
     print(f"Presentation ID: {presentation_id}")
 
-    # Making sure either content, slides markdown or files is provided
-    if not (request.content or request.slides_markdown or request.files):
+    # Making sure at least one input source is provided.
+    if not (
+        request.content
+        or request.slides_markdown
+        or request.files
+        or request.video_url
+        or request.source_url
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Either content or slides markdown or files is required to generate presentation",
+            detail=(
+                "Provide at least one of: content, slides_markdown, files, "
+                "video_url, source_url."
+            ),
         )
 
     if request.n_slides is not None and request.n_slides <= 0:
@@ -572,6 +586,49 @@ async def generate_presentation_handler(
             request.n_slides = len(request.slides_markdown)
 
         if not using_slides_markdown:
+            # Multimodal sources (video URL, video upload, web page) are
+            # collected first because they often produce far more context
+            # than a plain prompt and we want them visible to the outline
+            # generator.
+            extra_context_chunks: list[str] = []
+
+            if request.video_url:
+                if async_status:
+                    async_status.message = "Transcribing video"
+                    async_status.updated_at = datetime.now()
+                    sql_session.add(async_status)
+                    await sql_session.commit()
+                video_ctx = await transcribe_video(
+                    request.video_url,
+                    is_url=True,
+                    language=request.language,
+                )
+                extra_context_chunks.append(video_ctx.combined_context)
+                if not request.content:
+                    request.content = (
+                        f"Create a presentation summarising the video at "
+                        f"{request.video_url}"
+                    )
+
+            if request.source_url:
+                if async_status:
+                    async_status.message = "Fetching page content"
+                    async_status.updated_at = datetime.now()
+                    sql_session.add(async_status)
+                    await sql_session.commit()
+                page = await fetch_url_text(request.source_url)
+                header = (
+                    f"=== Web page: {page.title or page.source_url} ===\n"
+                    f"Source: {page.source_url}\n\n"
+                )
+                extra_context_chunks.append(header + page.text)
+                if not request.content:
+                    request.content = (
+                        f"Create a presentation summarising the article at "
+                        f"{request.source_url}"
+                        + (f" titled '{page.title}'" if page.title else "")
+                    )
+
             # Updating async status
             if async_status:
                 async_status.message = "Generating presentation outlines"
@@ -580,14 +637,43 @@ async def generate_presentation_handler(
                 await sql_session.commit()
 
             if request.files:
-                documents_loader = DocumentsLoader(
-                    file_paths=request.files,
-                    presentation_language=request.language,
-                )
-                await documents_loader.load_documents()
-                documents = documents_loader.documents
-                if documents:
-                    additional_context = "\n\n".join(documents)
+                video_files = [
+                    p for p in request.files if is_video_filename(p)
+                ]
+                document_files = [
+                    p for p in request.files if not is_video_filename(p)
+                ]
+
+                if video_files:
+                    if async_status:
+                        async_status.message = "Transcribing uploaded video"
+                        async_status.updated_at = datetime.now()
+                        sql_session.add(async_status)
+                        await sql_session.commit()
+                    for path in video_files:
+                        ctx = await transcribe_video(
+                            path,
+                            is_url=False,
+                            language=request.language,
+                        )
+                        extra_context_chunks.append(ctx.combined_context)
+                    if not request.content:
+                        request.content = (
+                            "Create a presentation summarising the uploaded video"
+                        )
+
+                if document_files:
+                    documents_loader = DocumentsLoader(
+                        file_paths=document_files,
+                        presentation_language=request.language,
+                    )
+                    await documents_loader.load_documents()
+                    documents = documents_loader.documents
+                    if documents:
+                        extra_context_chunks.append("\n\n".join(documents))
+
+            if extra_context_chunks:
+                additional_context = "\n\n".join(extra_context_chunks)
 
             # Finding number of slides to generate by considering table of contents
             n_slides_to_generate = request.n_slides

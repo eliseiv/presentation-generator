@@ -113,9 +113,37 @@ class GeneratePresentationRequest(BaseModel):
         default=None,
         description=(
             "Пути файлов, ранее загруженных через `POST /api/v1/ppt/files/upload`. "
-            "Сервис использует их как источник контента (PDF/DOCX/TXT/изображения)."
+            "Сервис использует их как источник контента (PDF/DOCX/TXT/изображения, "
+            "видео `.mp4/.mov/.mkv/.webm` и аудио `.mp3/.wav/.m4a` — для видео и "
+            "аудио сервис извлекает речь через Whisper и описывает кадры через "
+            "GPT-4o Vision)."
         ),
         examples=[["/tmp/presenton/abc/source.pdf"]],
+    )
+    video_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Прямая ссылка на видео-файл (например `https://.../video.mp4`). "
+            "Сервис извлекает аудио через ffmpeg, транскрибирует его через "
+            "Whisper, плюс семплирует один кадр в 10 секунд и описывает их "
+            "через GPT-4o Vision. Полученный контекст используется как основа "
+            "для генерации слайдов. Лимит длительности — 30 минут."
+        ),
+        examples=[
+            "https://dn720706.ca.archive.org/0/items/ElephantsDream/ed_hd.mp4"
+        ],
+    )
+    source_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Ссылка на текстовую веб-страницу (например статью Wikipedia). "
+            "Сервис скачивает HTML, извлекает чистый текст (через REST API "
+            "Wikipedia или trafilatura для других сайтов) и использует его "
+            "как контекст для генерации презентации."
+        ),
+        examples=[
+            "https://en.wikipedia.org/wiki/Machine_learning"
+        ],
     )
     export_as: Literal["pptx", "pdf"] = Field(
         default="pptx",

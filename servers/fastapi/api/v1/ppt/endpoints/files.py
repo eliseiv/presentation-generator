@@ -20,7 +20,8 @@ async def upload_files(files: Optional[List[UploadFile]]):
 
     temp_dir = TEMP_FILE_SERVICE.create_temp_dir(str(uuid.uuid4()))
 
-    validate_files(files, True, True, 100, UPLOAD_ACCEPTED_FILE_TYPES)
+    # 2 GB cap covers PDFs/Office docs as well as 30-minute mobile videos.
+    validate_files(files, True, True, 2048, UPLOAD_ACCEPTED_FILE_TYPES)
 
     temp_files: List[str] = []
     if files:

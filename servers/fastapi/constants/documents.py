@@ -24,6 +24,30 @@ IMAGE_EXTENSIONS = (
 
 OFFICE_EXTENSIONS = WORD_EXTENSIONS + POWERPOINT_EXTENSIONS + SPREADSHEET_EXTENSIONS
 
+VIDEO_EXTENSIONS = [".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mpeg", ".mpg"]
+AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]
+MEDIA_EXTENSIONS = VIDEO_EXTENSIONS + AUDIO_EXTENSIONS
+
+VIDEO_MIME_TYPES = [
+    "video/mp4",
+    "video/quicktime",
+    "video/x-matroska",
+    "video/webm",
+    "video/x-msvideo",
+    "video/mpeg",
+]
+AUDIO_MIME_TYPES = [
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp4",
+    "audio/aac",
+    "audio/ogg",
+    "audio/flac",
+]
+MEDIA_MIME_TYPES = VIDEO_MIME_TYPES + AUDIO_MIME_TYPES
+
 PDF_MIME_TYPES = ["application/pdf"]
 TEXT_MIME_TYPES = ["text/plain", "text/markdown"]
 
@@ -71,10 +95,15 @@ UPLOAD_ACCEPTED_MIME_TYPES = (
     + POWERPOINT_MIME_TYPES
     + SPREADSHEET_MIME_TYPES
     + IMAGE_MIME_TYPES
+    + MEDIA_MIME_TYPES
 )
 
 UPLOAD_ACCEPTED_EXTENSIONS = (
-    PDF_EXTENSIONS + TEXT_EXTENSIONS + OFFICE_EXTENSIONS + IMAGE_EXTENSIONS
+    PDF_EXTENSIONS
+    + TEXT_EXTENSIONS
+    + OFFICE_EXTENSIONS
+    + IMAGE_EXTENSIONS
+    + MEDIA_EXTENSIONS
 )
 
 # Includes both MIME types and extensions because some clients upload legacy

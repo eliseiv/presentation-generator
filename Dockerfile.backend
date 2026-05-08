@@ -86,7 +86,7 @@ ENV APP_DATA_DIRECTORY=/app_data \
     START_OLLAMA=false
 
 RUN set -eux; \
-    packages="ca-certificates curl chromium nginx fontconfig imagemagick zstd"; \
+    packages="ca-certificates curl chromium ffmpeg nginx fontconfig imagemagick zstd"; \
     if [ "$INSTALL_LIBREOFFICE" = "true" ]; then packages="$packages libreoffice"; fi; \
     if [ "$INSTALL_TESSERACT" = "true" ]; then packages="$packages tesseract-ocr tesseract-ocr-eng"; fi; \
     apt-get update; \
