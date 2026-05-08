@@ -121,7 +121,21 @@ jobs:
 
             docker compose -f docker-compose.deploy.yml --profile prod up -d --remove-orphans --no-build
 
-            docker image prune -af --filter "until=24h"
-            docker builder prune -af --filter "until=24h"
+            # Drop every old presentation-generator-backend tag except the
+            # one we just deployed and :backend-latest. CI tags each build
+            # with the SHA, so without this loop /var/lib/containerd fills
+            # up within a couple of weeks of regular pushes.
+            IMAGE_REPO="${BACKEND_IMAGE%:*}"
+            ACTIVE_TAG="${BACKEND_IMAGE##*:}"
+            docker images "$IMAGE_REPO" --format '{{.Tag}}' \
+              | grep -vE "^(${ACTIVE_TAG}|backend-latest|<none>)$" \
+              | xargs -r -I {} docker rmi -f "${IMAGE_REPO}:{}" || true
+
+            # Catch anything else (dangling layers, replaced base images,
+            # build cache). Dropping the until=24h filter is intentional —
+            # running containers' images are still protected by Docker, so
+            # this is safe.
+            docker image prune -af
+            docker buildx prune -af
 
             docker compose -f docker-compose.deploy.yml --profile prod ps
