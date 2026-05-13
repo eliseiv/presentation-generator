@@ -33,6 +33,22 @@ def get_service_api_key_env():
     return os.getenv("SERVICE_API_KEY")
 
 
+def get_admin_api_key_env():
+    return os.getenv("ADMIN_API_KEY")
+
+
+def get_adapty_webhook_secret_env():
+    return os.getenv("ADAPTY_WEBHOOK_SECRET")
+
+
+def get_token_cost_per_generation_env():
+    return os.getenv("TOKEN_COST_PER_GENERATION")
+
+
+def get_subscription_tokens_grant_env():
+    return os.getenv("SUBSCRIPTION_TOKENS_GRANT")
+
+
 def get_llm_provider_env():
     return os.getenv("LLM")
 

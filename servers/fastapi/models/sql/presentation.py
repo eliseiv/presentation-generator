@@ -42,6 +42,10 @@ class PresentationModel(SQLModel, table=True):
     include_title_slide: bool = Field(sa_column=Column(Boolean), default=True)
     web_search: bool = Field(sa_column=Column(Boolean), default=False)
     theme: Optional[dict] = Field(sa_column=Column(JSON), default=None)
+    user_id: Optional[str] = Field(
+        sa_column=Column(String, nullable=True, index=True), default=None
+    )
+    token_cost: Optional[int] = Field(default=None)
 
     def get_new_presentation(self):
         return PresentationModel(

@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from api.lifespan import app_lifespan
 from api.middlewares import ServiceApiKeyMiddleware, UserConfigEnvUpdateMiddleware
 from api.v1.auth.router import API_V1_AUTH_ROUTER
+from api.v1.billing.router import BILLING_ROUTER
 from api.v1.mock.router import API_V1_MOCK_ROUTER
 from api.v1.ppt.router import API_V1_PPT_ROUTER
 from api.v1.webhook.router import API_V1_WEBHOOK_ROUTER
@@ -117,6 +118,9 @@ IOS_OPENAPI_PATHS = {
     "/api/v1/ppt/presentation/status/{id}": {"get"},
     "/api/v1/ppt/presentation/generate": {"post"},
     "/api/v1/ppt/files/upload": {"post"},
+    "/api/v1/billing/me": {"get"},
+    "/api/v1/billing/credit": {"post"},
+    "/api/v1/billing/adapty/webhook": {"post"},
 }
 
 app = FastAPI(
@@ -703,6 +707,7 @@ app.include_router(API_V1_PPT_ROUTER)
 app.include_router(API_V1_WEBHOOK_ROUTER)
 app.include_router(API_V1_MOCK_ROUTER)
 app.include_router(API_V1_AUTH_ROUTER)
+app.include_router(BILLING_ROUTER)
 
 # Mount app_data and static assets (direct FastAPI access; nginx also serves /static in Docker).
 app_data_dir = get_app_data_directory_env()

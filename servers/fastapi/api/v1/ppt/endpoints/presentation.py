@@ -6,7 +6,7 @@ import random
 import traceback
 from typing import Annotated, List, Literal, Optional, Tuple
 import dirtyjson
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Path
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Path
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,12 @@ from models.presentation_with_slides import (
     PresentationWithSlides,
 )
 from models.sql.template import TemplateModel
+from services.billing_service import (
+    compute_generation_cost,
+    debit_for_generation,
+    get_or_create_user,
+    refund_generation,
+)
 from services.documents_loader import DocumentsLoader
 from services.webhook_service import WebhookService
 from services.image_generation_service import ImageGenerationService
@@ -575,6 +581,8 @@ async def generate_presentation_handler(
     presentation_id: uuid.UUID,
     async_status: Optional[AsyncPresentationGenerationTaskModel],
     sql_session: AsyncSession = Depends(get_async_session),
+    user_id: Optional[str] = None,
+    token_cost: Optional[int] = None,
 ):
     try:
         using_slides_markdown = False
@@ -863,6 +871,8 @@ async def generate_presentation_handler(
             tone=request.tone.value,
             verbosity=request.verbosity.value,
             instructions=request.instructions,
+            user_id=user_id,
+            token_cost=token_cost,
         )
 
         # Updating async status
@@ -1020,16 +1030,45 @@ async def generate_presentation_handler(
 async def generate_presentation_sync(
     request: GeneratePresentationRequest,
     sql_session: AsyncSession = Depends(get_async_session),
+    x_user_id: str = Header(..., alias="X-User-Id"),
 ):
+    (presentation_id,) = await check_if_api_request_is_valid(request, sql_session)
+
+    user_id = x_user_id.strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id header is required.")
+    await get_or_create_user(sql_session, user_id)
+    token_cost = compute_generation_cost(request)
+    await debit_for_generation(
+        sql_session,
+        user_id=user_id,
+        presentation_id=str(presentation_id),
+        cost=token_cost,
+    )
+
     try:
-        (presentation_id,) = await check_if_api_request_is_valid(request, sql_session)
         return await generate_presentation_handler(
-            request, presentation_id, None, sql_session
+            request,
+            presentation_id,
+            None,
+            sql_session,
+            user_id=user_id,
+            token_cost=token_cost,
         )
-    except HTTPException:
+    except HTTPException as exc:
+        await refund_generation(
+            user_id=user_id,
+            presentation_id=str(presentation_id),
+            reason_note=str(exc.detail)[:200],
+        )
         raise
     except Exception:
         traceback.print_exc()
+        await refund_generation(
+            user_id=user_id,
+            presentation_id=str(presentation_id),
+            reason_note="generation_failed",
+        )
         raise HTTPException(status_code=500, detail="Presentation generation failed")
 
 
@@ -1037,6 +1076,8 @@ async def _run_async_generation(
     request: GeneratePresentationRequest,
     presentation_id: uuid.UUID,
     task_id: str,
+    user_id: str,
+    token_cost: int,
 ):
     """
     Background runner for async presentation generation.
@@ -1045,6 +1086,9 @@ async def _run_async_generation(
     request-scoped sessions are closed by FastAPI as soon as the HTTP response
     flushes, so reusing them here would surface as `Connection is closed` /
     `InterfaceError` the first time the handler hits the database.
+
+    Tokens have already been debited in the calling endpoint; if generation
+    fails we refund here so the caller is not charged for failures.
     """
     async with async_session_maker() as session:
         try:
@@ -1063,7 +1107,30 @@ async def _run_async_generation(
                 session.add(async_status)
                 await session.commit()
             await generate_presentation_handler(
-                request, presentation_id, async_status, session
+                request,
+                presentation_id,
+                async_status,
+                session,
+                user_id=user_id,
+                token_cost=token_cost,
+            )
+        except Exception:
+            traceback.print_exc()
+
+    # The handler swallows exceptions when running async — it only flips the
+    # task row to status="error". Refund here so the failing async task does
+    # not leave the user out-of-pocket. Idempotent on presentation_id.
+    refreshed_status: Optional[AsyncPresentationGenerationTaskModel] = None
+    async with async_session_maker() as session:
+        refreshed_status = await session.get(
+            AsyncPresentationGenerationTaskModel, task_id
+        )
+    if refreshed_status and refreshed_status.status == "error":
+        try:
+            await refund_generation(
+                user_id=user_id,
+                presentation_id=str(presentation_id),
+                reason_note="async_generation_failed",
             )
         except Exception:
             traceback.print_exc()
@@ -1076,9 +1143,24 @@ async def generate_presentation_async(
     request: GeneratePresentationRequest,
     background_tasks: BackgroundTasks,
     sql_session: AsyncSession = Depends(get_async_session),
+    x_user_id: str = Header(..., alias="X-User-Id"),
 ):
     try:
         (presentation_id,) = await check_if_api_request_is_valid(request, sql_session)
+
+        user_id = x_user_id.strip()
+        if not user_id:
+            raise HTTPException(
+                status_code=400, detail="X-User-Id header is required."
+            )
+        await get_or_create_user(sql_session, user_id)
+        token_cost = compute_generation_cost(request)
+        await debit_for_generation(
+            sql_session,
+            user_id=user_id,
+            presentation_id=str(presentation_id),
+            cost=token_cost,
+        )
 
         async_status = AsyncPresentationGenerationTaskModel(
             status="pending",
@@ -1100,6 +1182,8 @@ async def generate_presentation_async(
             request,
             presentation_id,
             task_id,
+            user_id,
+            token_cost,
         )
         return async_status
 
