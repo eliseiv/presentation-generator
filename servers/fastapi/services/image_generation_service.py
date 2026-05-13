@@ -1,12 +1,37 @@
 import asyncio
 import base64
 import json
+import logging
 import os
 import aiohttp
 from fastapi import HTTPException
 from google import genai
 from google.genai import types
 from openai import NOT_GIVEN, AsyncOpenAI, RateLimitError
+
+logger = logging.getLogger(__name__)
+
+# Tier-1 OpenAI accounts cap DALL·E 3 at 5 images/min. Even on higher tiers
+# the SDK silently retries on 429, so running every slide's image in parallel
+# inflates wall time and can stall a whole deck behind one stuck request.
+# Three in flight is a comfortable margin for Tier 1 and keeps non-OpenAI
+# providers (Pexels/Pixabay/ComfyUI) responsive too.
+_IMAGE_GEN_CONCURRENCY = 3
+_IMAGE_GEN_TIMEOUT_SEC = 90.0
+_IMAGE_GEN_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _get_image_gen_semaphore() -> asyncio.Semaphore:
+    """
+    Lazily create the global semaphore so the running event loop owns it.
+    Eager creation at import time binds to whatever loop happened to be
+    around then — fine in production but breaks pytest fixtures and any
+    code that spins up a new loop.
+    """
+    global _IMAGE_GEN_SEMAPHORE
+    if _IMAGE_GEN_SEMAPHORE is None:
+        _IMAGE_GEN_SEMAPHORE = asyncio.Semaphore(_IMAGE_GEN_CONCURRENCY)
+    return _IMAGE_GEN_SEMAPHORE
 from models.image_prompt import ImagePrompt
 from models.sql.image_asset import ImageAsset
 from utils.get_env import (
@@ -100,13 +125,19 @@ class ImageGenerationService:
         )
         print(f"Request - Generating Image for {image_prompt}")
 
+        semaphore = _get_image_gen_semaphore()
         try:
-            if self.is_stock_provider_selected():
-                image_path = await self.image_gen_func(image_prompt)
-            else:
-                image_path = await self.image_gen_func(
-                    image_prompt, self.output_directory
-                )
+            async with semaphore:
+                if self.is_stock_provider_selected():
+                    image_path = await asyncio.wait_for(
+                        self.image_gen_func(image_prompt),
+                        timeout=_IMAGE_GEN_TIMEOUT_SEC,
+                    )
+                else:
+                    image_path = await asyncio.wait_for(
+                        self.image_gen_func(image_prompt, self.output_directory),
+                        timeout=_IMAGE_GEN_TIMEOUT_SEC,
+                    )
             if image_path:
                 if image_path.startswith("http"):
                     return image_path
@@ -125,8 +156,16 @@ class ImageGenerationService:
                     return image_path
             raise Exception(f"Image not found at {image_path}")
 
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Image generation timed out after %ss for prompt %r; "
+                "returning placeholder.",
+                _IMAGE_GEN_TIMEOUT_SEC,
+                prompt.prompt,
+            )
+            return "/static/images/placeholder.jpg"
         except Exception as e:
-            print(f"Error generating image: {e}")
+            logger.warning("Image generation failed (%s); returning placeholder.", e)
             return "/static/images/placeholder.jpg"
 
     async def generate_image_openai(

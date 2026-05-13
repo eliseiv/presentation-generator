@@ -875,9 +875,12 @@ async def generate_presentation_handler(
             token_cost=token_cost,
         )
 
-        # Updating async status
+        # Updating async status. We split the previous single "Generating
+        # slides" stage into two so iOS polling reflects what's actually
+        # happening on the backend: the LLM writes the slide content, then
+        # we sit waiting for DALL·E to deliver the images.
         if async_status:
-            async_status.message = "Generating slides"
+            async_status.message = "Generating slide content"
             async_status.updated_at = datetime.now()
             sql_session.add(async_status)
             await sql_session.commit()
@@ -949,7 +952,11 @@ async def generate_presentation_handler(
             async_assets_generation_tasks.extend(asset_tasks)
 
         if async_status:
-            async_status.message = "Fetching assets for slides"
+            # All LLM batches are dispatched at this point; only image+icon
+            # tasks remain. Flip the status now so polling clients stop
+            # seeing "Generating slide content" once we're actually waiting
+            # on DALL·E.
+            async_status.message = "Fetching slide images"
             async_status.updated_at = datetime.now()
             sql_session.add(async_status)
             await sql_session.commit()
