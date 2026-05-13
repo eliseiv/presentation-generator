@@ -87,6 +87,46 @@ OPENAPI_DESCRIPTION = """
 | `files` | пути загруженных файлов | PDF/DOCX/TXT/изображения, а также `.mp4/.mov/.mkv/.webm` и `.mp3/.wav/.m4a` |
 | `video_url` | прямая ссылка на видео | Кадры через GPT-4o Vision (1 кадр/10 сек, до 30 мин) |
 | `source_url` | ссылка на веб-страницу | Извлечение текста |
+
+## Авторизация и Биллинг
+
+Каждый запрос в API:
+
+1. **`X-API-Key`** — общий сервисный ключ (env `SERVICE_API_KEY`),
+   гейт сервиса. Без него — 401.
+2. **`X-User-Id`** — идентификатор конкретного пользователя
+   (Apple `identifierForVendor` или ваш собственный стабильный UUID).
+   Без него `/generate*` вернёт **422**. Любой неизвестный `X-User-Id`
+   автоматически создаётся как новый пользователь с балансом **0**
+   токенов и `subscription=false`.
+
+### Стоимость генерации
+
+Одна успешная генерация снимает `TOKEN_COST_PER_GENERATION` токенов
+(по умолчанию **1**) — одинаково для prompt / video / URL / 3-слайд /
+30-слайд. При ошибке генерации токены автоматически возвращаются.
+
+Если токенов не хватает — `/generate*` вернёт **HTTP 402**:
+
+```json
+{ "error": "insufficient_tokens", "balance": 0, "required": 1 }
+```
+
+### Пополнение баланса
+
+Два пути:
+
+1. **Подписка через Adapty** (основной). Adapty шлёт webhook на
+   `/api/v1/billing/adapty/webhook`, мы выставляем `subscription=true`
+   и начисляем `SUBSCRIPTION_TOKENS_GRANT` токенов (по умолчанию
+   **100**) при `subscription_started` / `subscription_renewed`.
+   При `subscription_cancelled` / `subscription_expired` снимается
+   только флаг, токены остаются.
+2. **Админ-пополнение** через `POST /api/v1/billing/credit` с заголовком
+   `X-Admin-Key` (env `ADMIN_API_KEY`, отдельный от SERVICE_API_KEY).
+
+Текущий баланс и состояние подписки видны через
+`GET /api/v1/billing/me` с заголовком `X-User-Id`.
 """
 
 
@@ -110,6 +150,27 @@ OPENAPI_TAGS = [
     {
         "name": "5. Синхронная генерация",
         "description": "Блокирующая генерация для коротких тестов через Swagger.",
+    },
+    {
+        "name": "6. Кошелёк пользователя",
+        "description": (
+            "Баланс токенов и состояние подписки конкретного пользователя. "
+            "Для всех iOS-эндпоинтов теперь обязателен header `X-User-Id`."
+        ),
+    },
+    {
+        "name": "7. Админ-операции",
+        "description": (
+            "Ручное начисление токенов. Доступно только с правильным "
+            "`X-Admin-Key` (env `ADMIN_API_KEY`), отдельным от SERVICE_API_KEY."
+        ),
+    },
+    {
+        "name": "8. Adapty webhook",
+        "description": (
+            "Входящий webhook от Adapty для событий подписки. Подпись HMAC-SHA256 "
+            "проверяется против env `ADAPTY_WEBHOOK_SECRET`."
+        ),
     },
 ]
 
@@ -286,7 +347,7 @@ def _set_json_response_example(
     content.setdefault("application/json", {}).setdefault("example", example)
 
 
-def _set_error_examples(operation: dict) -> None:
+def _set_error_examples(operation: dict, *, include_insufficient_tokens: bool = False) -> None:
     responses = operation.setdefault("responses", {})
     responses["401"] = {
         "description": "API key не передан или неверный.",
@@ -296,6 +357,41 @@ def _set_error_examples(operation: dict) -> None:
             }
         },
     }
+    if include_insufficient_tokens:
+        responses["402"] = {
+            "description": (
+                "Недостаточно токенов. iOS должен показать paywall и "
+                "повторить попытку после пополнения баланса."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "error": "insufficient_tokens",
+                            "balance": 0,
+                            "required": 1,
+                        }
+                    }
+                }
+            },
+        }
+        responses["422"] = {
+            "description": "Заголовок `X-User-Id` не передан.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "type": "missing",
+                                "loc": ["header", "X-User-Id"],
+                                "msg": "Field required",
+                                "input": None,
+                            }
+                        ]
+                    }
+                }
+            },
+        }
     responses["500"] = {
         "description": "Сервисный ключ не настроен или произошла внутренняя ошибка.",
         "content": {
@@ -344,7 +440,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
     )
     if generate_operation:
         _set_tags(generate_operation, "5. Синхронная генерация")
-        _set_error_examples(generate_operation)
+        _set_error_examples(generate_operation, include_insufficient_tokens=True)
         _set_json_request_examples(
             generate_operation,
             {
@@ -495,7 +591,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
     )
     if async_operation:
         _set_tags(async_operation, "1. Создание презентации")
-        _set_error_examples(async_operation)
+        _set_error_examples(async_operation, include_insufficient_tokens=True)
         _set_json_request_examples(
             async_operation,
             {
@@ -701,6 +797,179 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                 "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
             ],
         )
+
+    # ---------- Billing ----------
+
+    me_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/billing/me",
+        "get",
+        summary="Кошелёк текущего пользователя",
+        description=(
+            "Возвращает баланс токенов и состояние подписки. "
+            "Если `X-User-Id` ранее не встречался — автоматически создаётся "
+            "новый пользователь с `tokens=0` и `subscription=false`.\n\n"
+            "**Заголовки**:\n\n"
+            "- `X-API-Key: <SERVICE_API_KEY>` — обязателен.\n"
+            "- `X-User-Id: <stable-uuid>` — обязателен. Значение должно быть "
+            "стабильным для одного человека (`identifierForVendor` на iOS или "
+            "собственный backend-side UUID).\n\n"
+            "Поля ответа:\n\n"
+            "- `tokens` — текущий баланс.\n"
+            "- `subscription` — true, если последний Adapty-event был "
+            "`subscription_started` или `subscription_renewed`.\n"
+            "- `token_cost_per_generation` — сколько списывается за одну "
+            "генерацию.\n"
+            "- `subscription_tokens_grant` — сколько начисляется при покупке/"
+            "продлении подписки."
+        ),
+        response_description="Кошелёк пользователя.",
+    )
+    if me_operation:
+        _set_tags(me_operation, "6. Кошелёк пользователя")
+        _set_error_examples(me_operation)
+        _set_json_response_example(
+            me_operation,
+            "200",
+            description="Баланс и состояние подписки.",
+            example={
+                "user_id": "user-ios-abc-123",
+                "tokens": 99,
+                "subscription": True,
+                "subscription_expires_at": "2026-12-31T23:59:59",
+                "token_cost_per_generation": 1,
+                "subscription_tokens_grant": 100,
+            },
+        )
+
+    credit_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/billing/credit",
+        "post",
+        summary="Админ-операция: начислить токены пользователю",
+        description=(
+            "Только для оператора. Требует header `X-Admin-Key` со значением "
+            "из env `ADMIN_API_KEY` (отдельный ключ от `SERVICE_API_KEY` — "
+            "ротируется независимо).\n\n"
+            "Каждое начисление добавляет запись `admin_credit` в "
+            "`token_ledger_entries`, так что весь admin-фон полностью "
+            "аудируется."
+        ),
+        response_description="Новый баланс пользователя.",
+    )
+    if credit_operation:
+        _set_tags(credit_operation, "7. Админ-операции")
+        _set_error_examples(credit_operation)
+        _set_json_request_examples(
+            credit_operation,
+            {
+                "credit_5": {
+                    "summary": "Начислить 5 токенов",
+                    "value": {
+                        "user_id": "user-ios-abc-123",
+                        "amount": 5,
+                        "note": "promo for early adopter",
+                    },
+                },
+            },
+        )
+        _set_json_response_example(
+            credit_operation,
+            "200",
+            description="Токены начислены.",
+            example={"user_id": "user-ios-abc-123", "balance": 5},
+        )
+
+    adapty_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/billing/adapty/webhook",
+        "post",
+        summary="Adapty webhook receiver",
+        description=(
+            "Этот endpoint вызывает **Adapty**, не iOS-клиент.\n\n"
+            "Заголовок `Adapty-Signature` обязателен. Подпись = "
+            "HMAC-SHA256(raw_body, ADAPTY_WEBHOOK_SECRET) hex. Если подпись "
+            "не совпадает — 401.\n\n"
+            "Поддерживаются события:\n\n"
+            "| `event_type` | Что делает |\n"
+            "|---|---|\n"
+            "| `subscription_started` | `subscription=true` + `+SUBSCRIPTION_TOKENS_GRANT` |\n"
+            "| `subscription_renewed` | `+SUBSCRIPTION_TOKENS_GRANT` (флаг остаётся true) |\n"
+            "| `subscription_cancelled` | `subscription=false`, токены не трогаем |\n"
+            "| `subscription_expired` | `subscription=false`, токены не трогаем |\n\n"
+            "Идемпотентность гарантируется на уровне `event_id` — повтор "
+            "того же события не приводит к двойному начислению.\n\n"
+            "Какие поля Adapty ожидаются в payload (упрощённо):\n\n"
+            "```json\n"
+            "{\n"
+            "  \"event_id\": \"<uuid>\",\n"
+            "  \"event_type\": \"subscription_started\",\n"
+            "  \"profile\": {\n"
+            "    \"customer_user_id\": \"user-ios-abc-123\",\n"
+            "    \"profile_id\": \"adapty-profile-id\"\n"
+            "  },\n"
+            "  \"event_properties\": {\n"
+            "    \"expires_at\": \"2026-12-31T23:59:59Z\"\n"
+            "  }\n"
+            "}\n"
+            "```\n\n"
+            "В iOS-приложении убедитесь, что `customer_user_id` в Adapty "
+            "выставлен в **тот же** идентификатор, что вы шлёте в `X-User-Id`."
+        ),
+        response_description="Результат обработки события.",
+    )
+    if adapty_operation:
+        _set_tags(adapty_operation, "8. Adapty webhook")
+        adapty_responses = adapty_operation.setdefault("responses", {})
+        adapty_responses["200"] = {
+            "description": "Событие обработано (applied / duplicate / ignored).",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "applied": {
+                            "summary": "Новое событие применено",
+                            "value": {
+                                "status": "applied",
+                                "event_id": "evt-123",
+                                "event_type": "subscription_started",
+                                "subscription": True,
+                                "tokens": 100,
+                            },
+                        },
+                        "duplicate": {
+                            "summary": "Тот же event_id уже обработан",
+                            "value": {
+                                "status": "duplicate",
+                                "event_id": "evt-123",
+                            },
+                        },
+                        "ignored": {
+                            "summary": "Неизвестный event_type — игнорируем",
+                            "value": {
+                                "status": "ignored",
+                                "event_type": "some_other_event",
+                            },
+                        },
+                    }
+                }
+            },
+        }
+        adapty_responses["401"] = {
+            "description": "Неверный/отсутствующий `Adapty-Signature`.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid Adapty signature."}
+                }
+            },
+        }
+        adapty_responses["400"] = {
+            "description": "Кривой JSON или нет обязательных полей.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "customer_user_id is required."}
+                }
+            },
+        }
 
 # Routers
 app.include_router(API_V1_PPT_ROUTER)
