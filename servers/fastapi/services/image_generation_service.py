@@ -202,18 +202,17 @@ class ImageGenerationService:
     async def generate_image_openai_gpt_image_1_5(
         self, prompt: str, output_directory: str
     ) -> str:
-        try:
-            return await self.generate_image_openai(
-                prompt,
-                output_directory,
-                "gpt-image-1.5",
-                get_gpt_image_1_5_quality_env() or "medium",
-            )
-        except Exception as error:
-            if not _is_openai_rate_limit_error(error):
-                raise
-            print("OpenAI gpt-image-1.5 rate limit reached. Falling back to dall-e-3.")
-            return await self.generate_image_openai_dalle3(prompt, output_directory)
+        # The previous implementation fell back to dall-e-3 on rate-limit,
+        # but OpenAI removed dall-e-3 from the catalog in 2026 — the
+        # fallback now 400s with "model does not exist". Let rate-limit
+        # errors bubble up to generate_image(), which already converts
+        # them into a placeholder.
+        return await self.generate_image_openai(
+            prompt,
+            output_directory,
+            "gpt-image-1.5",
+            get_gpt_image_1_5_quality_env() or "medium",
+        )
 
     async def generate_image_open_webui(
         self, prompt: str, output_directory: str
