@@ -13,6 +13,7 @@ from models.sql.async_presentation_generation_status import (
 from models.sql.chat_history_message import ChatHistoryMessageModel
 from models.sql.image_asset import ImageAsset
 from models.sql.key_value import KeyValueSqlModel
+from models.sql.llm_usage import LlmUsageEntry
 from models.sql.ollama_pull_status import OllamaPullStatus
 from models.sql.presentation_layout_code import PresentationLayoutCodeModel
 from models.sql.presentation import PresentationModel
@@ -65,6 +66,7 @@ async def create_db_and_tables():
                         OllamaPullStatus.__table__,
                         UserModel.__table__,
                         TokenLedgerEntry.__table__,
+                        LlmUsageEntry.__table__,
                     ],
                 )
             )

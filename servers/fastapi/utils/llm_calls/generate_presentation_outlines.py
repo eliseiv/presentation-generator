@@ -217,12 +217,22 @@ async def generate_ppt_outline(
                 if chunk:
                     emitted_content = True
                     yield chunk
-            elif (
-                isinstance(event, ResponseStreamCompletionChunk)
-                and not emitted_content
-            ):
-                final_content = serialize_structured_content(event.content)
-                if final_content:
-                    yield final_content
+            elif isinstance(event, ResponseStreamCompletionChunk):
+                try:
+                    from services.llm_cost_service import record_text_usage
+
+                    await record_text_usage(
+                        provider="llmai",
+                        model=model,
+                        usage=getattr(event, "usage", None),
+                        kind="text",
+                        extra={"call": "outline_stream"},
+                    )
+                except Exception:
+                    pass
+                if not emitted_content:
+                    final_content = serialize_structured_content(event.content)
+                    if final_content:
+                        yield final_content
     except Exception as e:
         yield handle_llm_client_exceptions(e)

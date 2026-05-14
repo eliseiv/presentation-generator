@@ -34,6 +34,7 @@ from services.billing_service import (
     get_or_create_user,
     refund_generation,
 )
+from services.llm_cost_context import presentation_context
 from services.documents_loader import DocumentsLoader
 from services.webhook_service import WebhookService
 from services.image_generation_service import ImageGenerationService
@@ -1054,14 +1055,15 @@ async def generate_presentation_sync(
     )
 
     try:
-        return await generate_presentation_handler(
-            request,
-            presentation_id,
-            None,
-            sql_session,
-            user_id=user_id,
-            token_cost=token_cost,
-        )
+        with presentation_context(str(presentation_id), user_id):
+            return await generate_presentation_handler(
+                request,
+                presentation_id,
+                None,
+                sql_session,
+                user_id=user_id,
+                token_cost=token_cost,
+            )
     except HTTPException as exc:
         await refund_generation(
             user_id=user_id,
@@ -1113,14 +1115,15 @@ async def _run_async_generation(
                 )
                 session.add(async_status)
                 await session.commit()
-            await generate_presentation_handler(
-                request,
-                presentation_id,
-                async_status,
-                session,
-                user_id=user_id,
-                token_cost=token_cost,
-            )
+            with presentation_context(str(presentation_id), user_id):
+                await generate_presentation_handler(
+                    request,
+                    presentation_id,
+                    async_status,
+                    session,
+                    user_id=user_id,
+                    token_cost=token_cost,
+                )
         except Exception:
             traceback.print_exc()
 

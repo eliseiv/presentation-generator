@@ -172,6 +172,13 @@ OPENAPI_TAGS = [
             "проверяется против env `ADAPTY_WEBHOOK_SECRET`."
         ),
     },
+    {
+        "name": "9. Стоимость генераций",
+        "description": (
+            "Админский отчёт о реальных затратах на OpenAI / Google / Whisper "
+            "по каждой презентации и за период. Требует `X-Admin-Key`."
+        ),
+    },
 ]
 
 IOS_OPENAPI_PATHS = {
@@ -182,6 +189,8 @@ IOS_OPENAPI_PATHS = {
     "/api/v1/billing/me": {"get"},
     "/api/v1/billing/credit": {"post"},
     "/api/v1/billing/adapty/webhook": {"post"},
+    "/api/v1/billing/cost/{presentation_id}": {"get"},
+    "/api/v1/billing/cost/summary": {"get"},
 }
 
 app = FastAPI(
@@ -970,6 +979,136 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                 }
             },
         }
+
+    cost_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/billing/cost/{presentation_id}",
+        "get",
+        summary="Стоимость одной презентации в USD",
+        description=(
+            "Возвращает реальные upstream-затраты (OpenAI / Google / Whisper / "
+            "Vision) для конкретной презентации с разбивкой по типу вызова и "
+            "по моделям.\n\nТолько для админа: header `X-Admin-Key` обязателен.\n\n"
+            "Поля ответа:\n\n"
+            "- `total_cost_usd` — суммарная стоимость в долларах.\n"
+            "- `calls` — общее число upstream-запросов на эту презентацию.\n"
+            "- `by_kind` — разбивка по `text` / `image` / `audio` / `vision` "
+            "с количеством токенов, картинок, секунд аудио и стоимостью по "
+            "каждой использованной модели."
+        ),
+        response_description="Детальная разбивка стоимости.",
+    )
+    if cost_operation:
+        _set_tags(cost_operation, "9. Стоимость генераций")
+        _set_error_examples(cost_operation)
+        _set_json_response_example(
+            cost_operation,
+            "200",
+            description="Стоимость презентации.",
+            example={
+                "presentation_id": "abc-123-...",
+                "calls": 11,
+                "total_cost_usd": 0.3142,
+                "by_kind": {
+                    "text": {
+                        "calls": 8,
+                        "prompt_tokens": 14200,
+                        "completion_tokens": 4100,
+                        "total_tokens": 18300,
+                        "image_count": 0,
+                        "audio_seconds": 0.0,
+                        "cost_usd": 0.0612,
+                        "models": {
+                            "gpt-4.1": {"calls": 8, "cost_usd": 0.0612},
+                        },
+                    },
+                    "image": {
+                        "calls": 7,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                        "image_count": 7,
+                        "audio_seconds": 0.0,
+                        "cost_usd": 0.294,
+                        "models": {
+                            "gpt-image-1.5": {"calls": 7, "cost_usd": 0.294},
+                        },
+                    },
+                },
+            },
+        )
+
+    cost_summary_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/billing/cost/summary",
+        "get",
+        summary="Агрегированный отчёт за период",
+        description=(
+            "Сумма всех upstream-затрат за период. Можно отфильтровать по "
+            "`user_id`. Возвращает общее число вызовов, число затронутых "
+            "презентаций, суммарную стоимость и среднюю стоимость "
+            "генерации.\n\n"
+            "Только для админа: header `X-Admin-Key` обязателен.\n\n"
+            "Query-параметры:\n\n"
+            "- `user_id` — опционально, фильтр.\n"
+            "- `since` — ISO 8601 datetime, начало периода.\n"
+            "- `until` — ISO 8601 datetime, конец периода."
+        ),
+        response_description="Агрегаты затрат.",
+    )
+    if cost_summary_operation:
+        _set_tags(cost_summary_operation, "9. Стоимость генераций")
+        _set_error_examples(cost_summary_operation)
+        _set_json_response_example(
+            cost_summary_operation,
+            "200",
+            description="Сводка по затратам.",
+            example={
+                "filters": {
+                    "user_id": None,
+                    "since": "2026-05-01T00:00:00",
+                    "until": "2026-05-31T23:59:59",
+                },
+                "calls": 153,
+                "presentations": 22,
+                "total_cost_usd": 7.812,
+                "average_cost_per_presentation_usd": 0.3551,
+                "by_kind": {
+                    "text": {
+                        "calls": 110,
+                        "total_tokens": 280000,
+                        "cost_usd": 1.215,
+                        "models": {
+                            "gpt-4.1": {"calls": 110, "cost_usd": 1.215},
+                        },
+                    },
+                    "image": {
+                        "calls": 36,
+                        "image_count": 36,
+                        "cost_usd": 1.512,
+                        "models": {
+                            "gpt-image-1.5": {"calls": 36, "cost_usd": 1.512},
+                        },
+                    },
+                    "audio": {
+                        "calls": 4,
+                        "audio_seconds": 3600.0,
+                        "cost_usd": 0.36,
+                        "models": {
+                            "whisper-1": {"calls": 4, "cost_usd": 0.36},
+                        },
+                    },
+                    "vision": {
+                        "calls": 3,
+                        "total_tokens": 4500,
+                        "cost_usd": 4.725,
+                        "models": {
+                            "gpt-4o": {"calls": 3, "cost_usd": 4.725},
+                        },
+                    },
+                },
+            },
+        )
 
 # Routers
 app.include_router(API_V1_PPT_ROUTER)

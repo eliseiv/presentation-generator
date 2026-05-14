@@ -16,9 +16,10 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,7 @@ from services.billing_service import (
     get_token_cost_per_generation,
 )
 from services.database import get_async_session
+from services.llm_cost_service import get_cost_summary, get_presentation_cost
 from utils.get_env import (
     get_adapty_webhook_secret_env,
     get_admin_api_key_env,
@@ -156,3 +158,65 @@ async def adapty_webhook(
         raise HTTPException(status_code=400, detail="Body must be a JSON object.")
 
     return await apply_adapty_event(payload)
+
+
+# ----- Cost / usage reporting (admin) ----------------------------------------
+# IMPORTANT: declare `/cost/summary` BEFORE `/cost/{presentation_id}` —
+# FastAPI matches routes in registration order, so a literal "summary"
+# path otherwise gets captured by the {presentation_id} variable.
+
+
+@BILLING_ROUTER.get(
+    "/cost/summary",
+    summary="Агрегированный отчёт по затратам",
+)
+async def admin_get_cost_summary(
+    user_id: Optional[str] = Query(default=None, description="Фильтр по user_id."),
+    since: Optional[str] = Query(
+        default=None,
+        description="ISO 8601 datetime, e.g. 2026-05-01T00:00:00Z",
+    ),
+    until: Optional[str] = Query(
+        default=None,
+        description="ISO 8601 datetime, e.g. 2026-05-31T23:59:59Z",
+    ),
+    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
+):
+    """
+    Возвращает суммарные затраты, среднюю стоимость генерации и разбивку
+    по типу вызова за период. Только админ.
+    """
+    _verify_admin_key(x_admin_key)
+
+    def parse_dt(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid datetime '{value}': {exc}",
+            ) from exc
+
+    return await get_cost_summary(
+        user_id=user_id,
+        since=parse_dt(since),
+        until=parse_dt(until),
+    )
+
+
+@BILLING_ROUTER.get(
+    "/cost/{presentation_id}",
+    summary="Сколько стоила конкретная презентация",
+)
+async def admin_get_presentation_cost(
+    presentation_id: str,
+    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
+):
+    """
+    Возвращает разбивку реальных upstream-затрат (OpenAI / Google / Whisper /
+    Vision) по одной презентации. Только админ.
+    """
+    _verify_admin_key(x_admin_key)
+    return await get_presentation_cost(presentation_id)

@@ -202,6 +202,19 @@ async def get_slide_content_from_type_and_outline(
                     response_format=response_format,
                 ),
             )
+            try:
+                from services.llm_cost_service import record_text_usage
+
+                await record_text_usage(
+                    provider="llmai",
+                    model=model,
+                    usage=getattr(response, "usage", None),
+                    kind="text",
+                    extra={"call": "slide_content", "attempt": attempt},
+                )
+            except Exception:
+                pass
+
             content = extract_structured_content(response.content)
             if content is not None:
                 return content

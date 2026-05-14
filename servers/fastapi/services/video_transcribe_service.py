@@ -174,6 +174,32 @@ async def _whisper_transcribe(audio_path: str, language: str | None) -> str:
             language=_iso_639_1(language) if language else None,
         )
 
+    # Whisper verbose_json returns `duration` (audio seconds). Use it for
+    # cost tracking; fall back to summing segment durations if missing.
+    audio_seconds = 0.0
+    duration_attr = getattr(result, "duration", None)
+    if isinstance(duration_attr, (int, float)):
+        audio_seconds = float(duration_attr)
+    elif getattr(result, "segments", None):
+        audio_seconds = float(
+            max(
+                (float(getattr(seg, "end", 0.0) or 0.0) for seg in result.segments),
+                default=0.0,
+            )
+        )
+
+    try:
+        from services.llm_cost_service import record_audio_usage
+
+        await record_audio_usage(
+            provider="openai",
+            model="whisper-1",
+            audio_seconds=audio_seconds,
+            extra={"language": language},
+        )
+    except Exception:
+        pass
+
     segments = getattr(result, "segments", None) or []
     if not segments:
         return (getattr(result, "text", "") or "").strip()
@@ -236,6 +262,20 @@ async def _describe_frame_batch(
         max_tokens=40 * len(frame_paths) + 200,
         temperature=0.2,
     )
+
+    try:
+        from services.llm_cost_service import record_text_usage
+
+        await record_text_usage(
+            provider="openai",
+            model=_VLM_MODEL,
+            usage=getattr(response, "usage", None),
+            kind="vision",
+            extra={"frames": len(frame_paths), "detail": "low"},
+        )
+    except Exception:
+        pass
+
     return (response.choices[0].message.content or "").strip()
 
 
