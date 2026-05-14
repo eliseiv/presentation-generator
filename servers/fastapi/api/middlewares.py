@@ -17,9 +17,19 @@ class UserConfigEnvUpdateMiddleware(BaseHTTPMiddleware):
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# Paths that third parties POST to. They authenticate via their own signed
+# payloads / HMAC, not via our SERVICE_API_KEY, so the global middleware
+# must let them through unconditionally — the handlers verify the
+# signature themselves.
+_SERVICE_API_KEY_EXEMPT_PATHS = {
+    "/api/v1/billing/adapty/webhook",
+}
+
 
 class ServiceApiKeyMiddleware(BaseHTTPMiddleware):
     def _requires_auth(self, path: str) -> bool:
+        if path in _SERVICE_API_KEY_EXEMPT_PATHS:
+            return False
         if path.startswith("/api/"):
             return True
         if path.startswith("/app_data/"):
