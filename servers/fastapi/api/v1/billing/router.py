@@ -155,14 +155,24 @@ async def adapty_webhook(
 ):
     _verify_adapty_token(authorization)
 
+    # Empty body / non-JSON body / non-object body are all treated as
+    # "Adapty is just verifying the URL is alive" and answered with 200.
+    # Real events always arrive as a JSON object; the apply_adapty_event
+    # function still validates required fields inside.
     raw_body = await request.body()
+    if not raw_body:
+        logger.info("Adapty webhook ignored: empty body (URL verification ping).")
+        return {"status": "ignored", "reason": "empty_body"}
+
     try:
         payload = json.loads(raw_body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="Body is not valid JSON.") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        logger.info("Adapty webhook ignored: body is not valid JSON.")
+        return {"status": "ignored", "reason": "invalid_json"}
 
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object.")
+        logger.info("Adapty webhook ignored: body is not a JSON object.")
+        return {"status": "ignored", "reason": "not_an_object"}
 
     return await apply_adapty_event(payload)
 

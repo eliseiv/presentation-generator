@@ -362,8 +362,13 @@ async def apply_adapty_event(payload: dict) -> dict:
     event_type = fields["event_type"]
     user_id = fields["customer_user_id"]
 
+    # Adapty's "test event" / "verify URL" pings during webhook setup do
+    # not carry event_id, event_type, or customer_user_id. Treat anything
+    # malformed as ignored (200) rather than 400, so Adapty's UI can save
+    # the webhook on first try.
     if not event_id:
-        raise HTTPException(status_code=400, detail="event_id is required.")
+        logger.info("Adapty webhook ignored: missing event_id (probably a setup ping).")
+        return {"status": "ignored", "reason": "missing_event_id"}
     if event_type not in _ADAPTY_EVENT_REASONS:
         logger.info(
             "Adapty webhook: ignoring event_type=%s (event_id=%s)",
@@ -372,7 +377,15 @@ async def apply_adapty_event(payload: dict) -> dict:
         )
         return {"status": "ignored", "event_type": event_type}
     if not user_id:
-        raise HTTPException(status_code=400, detail="customer_user_id is required.")
+        logger.warning(
+            "Adapty webhook ignored: event_type=%s without customer_user_id (event_id=%s).",
+            event_type, event_id,
+        )
+        return {
+            "status": "ignored",
+            "reason": "missing_customer_user_id",
+            "event_id": event_id,
+        }
 
     reason = _ADAPTY_EVENT_REASONS[event_type]
     grant_tokens = get_subscription_tokens_grant() if event_type in (
