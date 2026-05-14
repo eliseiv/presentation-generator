@@ -168,8 +168,9 @@ OPENAPI_TAGS = [
     {
         "name": "8. Adapty webhook",
         "description": (
-            "Входящий webhook от Adapty для событий подписки. Подпись HMAC-SHA256 "
-            "проверяется против env `ADAPTY_WEBHOOK_SECRET`."
+            "Входящий webhook от Adapty для событий подписки. Авторизация — "
+            "статический bearer-token, который Adapty присылает заголовком "
+            "`Authorization: Bearer <ADAPTY_WEBHOOK_SECRET>`."
         ),
     },
     {
@@ -896,9 +897,13 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
         summary="Adapty webhook receiver",
         description=(
             "Этот endpoint вызывает **Adapty**, не iOS-клиент.\n\n"
-            "Заголовок `Adapty-Signature` обязателен. Подпись = "
-            "HMAC-SHA256(raw_body, ADAPTY_WEBHOOK_SECRET) hex. Если подпись "
-            "не совпадает — 401.\n\n"
+            "Авторизация — статический bearer-token. Adapty в настройках "
+            "webhook'а отправляет заголовок:\n\n"
+            "```\n"
+            "Authorization: Bearer <ADAPTY_WEBHOOK_SECRET>\n"
+            "```\n\n"
+            "Сервер сравнивает токен с env `ADAPTY_WEBHOOK_SECRET` через "
+            "constant-time comparison. Если не совпадает — 401.\n\n"
             "Поддерживаются события:\n\n"
             "| `event_type` | Что делает |\n"
             "|---|---|\n"
@@ -964,10 +969,10 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             },
         }
         adapty_responses["401"] = {
-            "description": "Неверный/отсутствующий `Adapty-Signature`.",
+            "description": "Неверный/отсутствующий `Authorization` bearer-token.",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Invalid Adapty signature."}
+                    "example": {"detail": "Invalid Adapty token."}
                 }
             },
         }

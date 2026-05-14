@@ -12,7 +12,6 @@ ServiceApiKeyMiddleware that gates `/api/*`. On top of that:
   `Adapty-Signature` header, computed against the raw request body.
 """
 
-import hashlib
 import hmac
 import json
 import logging
@@ -119,23 +118,31 @@ async def admin_credit_endpoint(
     return AdminCreditResponse(user_id=body.user_id, balance=balance)
 
 
-def _verify_adapty_signature(raw_body: bytes, provided_signature: Optional[str]) -> None:
+def _verify_adapty_token(authorization: Optional[str]) -> None:
+    """
+    Adapty does not sign payloads — it just lets the operator attach a
+    static custom header to every webhook delivery. We use the standard
+    `Authorization: Bearer <token>` shape and compare the token against
+    `ADAPTY_WEBHOOK_SECRET` with constant-time comparison.
+    """
     secret = (get_adapty_webhook_secret_env() or "").strip()
     if not secret:
         raise HTTPException(
             status_code=500,
             detail="ADAPTY_WEBHOOK_SECRET is not configured on the server.",
         )
-    if not provided_signature:
-        raise HTTPException(status_code=401, detail="Missing Adapty signature.")
-    provided = provided_signature.strip().lower()
-    if provided.startswith("sha256="):
-        provided = provided[len("sha256="):]
-    expected = hmac.new(
-        secret.encode("utf-8"), raw_body, hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(expected, provided):
-        raise HTTPException(status_code=401, detail="Invalid Adapty signature.")
+    if not authorization:
+        raise HTTPException(
+            status_code=401, detail="Missing Authorization header."
+        )
+    scheme, _, token = authorization.partition(" ")
+    if scheme.strip().lower() != "bearer" or not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header must be 'Bearer <token>'.",
+        )
+    if not hmac.compare_digest(token.strip(), secret):
+        raise HTTPException(status_code=401, detail="Invalid Adapty token.")
 
 
 @BILLING_ROUTER.post(
@@ -144,11 +151,11 @@ def _verify_adapty_signature(raw_body: bytes, provided_signature: Optional[str])
 )
 async def adapty_webhook(
     request: Request,
-    adapty_signature: Optional[str] = Header(default=None, alias="Adapty-Signature"),
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ):
-    raw_body = await request.body()
-    _verify_adapty_signature(raw_body, adapty_signature)
+    _verify_adapty_token(authorization)
 
+    raw_body = await request.body()
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
