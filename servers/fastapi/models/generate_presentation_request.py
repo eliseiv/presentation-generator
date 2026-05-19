@@ -104,6 +104,18 @@ class GeneratePresentationRequest(BaseModel):
         ),
         examples=["general"],
     )
+    theme: Literal["light", "dark"] = Field(
+        default="light",
+        description=(
+            "Цветовая тема презентации. Допустимые значения:\n"
+            "- `light` *(по умолчанию)* — белый фон, тёмный текст, фиолетовый "
+            "акцент. Стандартный вариант.\n"
+            "- `dark` — тёмный фон (`#0f172a`), светлый текст (`#f1f5f9`), тот "
+            "же фиолетовый акцент. Использовать когда пользователь iOS-приложения "
+            "выбрал тёмную тему презентации в интерфейсе."
+        ),
+        examples=["light"],
+    )
     include_table_of_contents: bool = Field(
         default=False,
         description=(
@@ -181,6 +193,7 @@ class GeneratePresentationRequest(BaseModel):
                     "n_slides": 5,
                     "language": "English",
                     "template": "general",
+                    "theme": "light",
                     "include_table_of_contents": False,
                     "include_title_slide": True,
                     "files": None,

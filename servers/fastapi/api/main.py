@@ -58,6 +58,16 @@ OPENAPI_DESCRIPTION = """
 | `pptx` *(по умолчанию)* | PowerPoint, редактируемый. |
 | `pdf` | PDF для распространения. |
 
+### `theme` — цветовая тема
+
+| Значение | Описание |
+|---|---|
+| `light` *(по умолчанию)* | Белый фон, тёмный текст, фиолетовый акцент. |
+| `dark` | Тёмный фон (`#0f172a`), светлый текст (`#f1f5f9`), фиолетовый акцент. |
+
+Цвета применяются на этапе рендеринга PPTX — слайды берут цвета из CSS-переменных,
+которые backend проставляет на основе выбранной темы.
+
 ### `language` — язык
 
 Свободная строка с английским названием языка: `English`, `Russian` и т. д.
@@ -467,6 +477,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 5,
                         "language": "English",
                         "template": "general",
+                        "theme": "light",
                         "include_table_of_contents": False,
                         "include_title_slide": True,
                         "files": None,
@@ -474,6 +485,22 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "source_url": None,
                         "export_as": "pptx",
                         "trigger_webhook": False,
+                    },
+                },
+                "prompt_dark": {
+                    "summary": "Генерация в тёмной теме",
+                    "description": (
+                        "То же что выше, но `theme=\"dark\"` — тёмный фон, "
+                        "светлый текст. Подойдёт когда юзер iOS выбрал "
+                        "Dark mode в UI."
+                    ),
+                    "value": {
+                        "content": "Cybersecurity essentials",
+                        "n_slides": 5,
+                        "language": "English",
+                        "template": "general",
+                        "theme": "dark",
+                        "export_as": "pptx",
                     },
                 },
                 "markdown": {
@@ -618,6 +645,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 7,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "light",
                         "include_table_of_contents": False,
                         "include_title_slide": True,
                         "files": None,
@@ -625,6 +653,21 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "source_url": None,
                         "export_as": "pptx",
                         "trigger_webhook": False,
+                    },
+                },
+                "async_prompt_dark": {
+                    "summary": "Асинхронная генерация в тёмной теме",
+                    "description": (
+                        "iOS-флоу с тёмной темой: пользователь переключил "
+                        "Dark mode в приложении — отправляем `theme=\"dark\"`."
+                    ),
+                    "value": {
+                        "content": "Modern UI design principles",
+                        "n_slides": 7,
+                        "language": "Russian",
+                        "template": "general",
+                        "theme": "dark",
+                        "export_as": "pptx",
                     },
                 },
                 "async_video_url": {

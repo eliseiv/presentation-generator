@@ -12,6 +12,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 from constants.presentation import DEFAULT_TEMPLATES, MAX_NUMBER_OF_SLIDES
+from constants.theme_presets import get_theme_preset
 from enums.webhook_event import WebhookEvent
 from models.api_error_model import APIErrorModel
 from models.generate_presentation_request import GeneratePresentationRequest
@@ -874,6 +875,7 @@ async def generate_presentation_handler(
             instructions=request.instructions,
             user_id=user_id,
             token_cost=token_cost,
+            theme=get_theme_preset(request.theme),
         )
 
         # Updating async status. We split the previous single "Generating

@@ -115,8 +115,16 @@ const PresentationPage = ({ presentation_id, exportCookie }: PresentationPagePro
     const element = document.getElementById('presentation-slides-wrapper')
     if (!element) return;
     if (!theme || !theme.data) { return; }
-    if (!theme.data.colors['graph_0']) { return; }
-    if (!theme.data.fonts?.textFont?.name || !theme.data.fonts?.textFont?.url) { return; }
+    if (!theme.data.colors?.['graph_0']) { return; }
+
+    // Colors are the must-have; fonts are optional. Previously this
+    // function bailed out entirely if fonts were missing, which meant
+    // backend-side theme presets without a `fonts` block produced a
+    // fully default (light) deck. Apply colors first so theme always
+    // takes effect, then patch fonts only if a usable font block is
+    // supplied. Skipping the font block also avoids a 120s Puppeteer
+    // navigation timeout that hit when a containerised renderer could
+    // not reach fonts.googleapis.com.
     const cssVariables = {
       '--primary-color': theme.data.colors['primary'],
       '--background-color': theme.data.colors['background'],
@@ -137,15 +145,17 @@ const PresentationPage = ({ presentation_id, exportCookie }: PresentationPagePro
     }
 
     Object.entries(cssVariables).forEach(([key, value]) => {
-      element.style.setProperty(key, value)
+      if (value) element.style.setProperty(key, value)
     })
-    useFontLoader({ [theme.data.fonts.textFont.name]: theme.data.fonts.textFont.url })
 
-    // Apply fonts to preview container
-    element.style.setProperty('font-family', `"${theme.data.fonts.textFont.name}"`)
-    element.style.setProperty('--heading-font-family', `"${theme.data.fonts.textFont.name}"`)
-    element.style.setProperty('--body-font-family', `"${theme.data.fonts.textFont.name}"`)
-    // Update the Presentation content with theme
+    const fontName = theme.data.fonts?.textFont?.name
+    const fontUrl = theme.data.fonts?.textFont?.url
+    if (fontName && fontUrl) {
+      useFontLoader({ [fontName]: fontUrl })
+      element.style.setProperty('font-family', `"${fontName}"`)
+      element.style.setProperty('--heading-font-family', `"${fontName}"`)
+      element.style.setProperty('--body-font-family', `"${fontName}"`)
+    }
   }
 
 
