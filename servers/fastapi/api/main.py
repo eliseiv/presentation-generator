@@ -133,7 +133,7 @@ OPENAPI_DESCRIPTION = """
    При `subscription_cancelled` / `subscription_expired` снимается
    только флаг, токены остаются.
 2. **Админ-пополнение** через `POST /api/v1/billing/credit` с заголовком
-   `X-Admin-Key` (env `ADMIN_API_KEY`, отдельный от SERVICE_API_KEY).
+   `X-Admin-Key`.
 
 Текущий баланс и состояние подписки видны через
 `GET /api/v1/billing/me` с заголовком `X-User-Id`.
@@ -514,6 +514,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         ],
                         "language": "English",
                         "template": "general",
+                        "theme": "light",
                         "export_as": "pdf",
                     },
                 },
@@ -526,6 +527,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 8,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "light",
                         "export_as": "pptx",
                     },
                 },
@@ -541,6 +543,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 5,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "dark",
                         "export_as": "pptx",
                     },
                 },
@@ -558,6 +561,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 7,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "light",
                         "export_as": "pptx",
                     },
                 },
@@ -573,6 +577,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 6,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "dark",
                         "export_as": "pptx",
                     },
                 },
@@ -590,6 +595,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 7,
                         "language": "English",
                         "template": "modern",
+                        "theme": "light",
                         "export_as": "pptx",
                     },
                 },
@@ -682,6 +688,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 7,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "dark",
                         "export_as": "pptx",
                     },
                 },
@@ -697,6 +704,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 7,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "light",
                         "export_as": "pptx",
                     },
                 },
@@ -711,6 +719,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 7,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "dark",
                         "export_as": "pptx",
                     },
                 },
@@ -727,6 +736,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                         "n_slides": 6,
                         "language": "Russian",
                         "template": "general",
+                        "theme": "light",
                         "export_as": "pptx",
                     },
                 },
