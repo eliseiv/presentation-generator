@@ -24,36 +24,101 @@ from models.sql.user import UserModel
 from services.database import async_session_maker
 from utils.datetime_utils import get_current_utc_datetime
 from utils.get_env import (
+    get_subscription_product_weekly_env,
+    get_subscription_product_yearly_env,
     get_subscription_tokens_grant_env,
+    get_subscription_tokens_weekly_env,
+    get_subscription_tokens_yearly_env,
     get_token_cost_per_generation_env,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def get_token_cost_per_generation() -> int:
-    raw = (get_token_cost_per_generation_env() or "1").strip()
+def _read_int_env(getter, default: int) -> int:
+    raw = (getter() or "").strip()
+    if not raw:
+        return default
     try:
-        cost = int(raw)
+        value = int(raw)
     except ValueError:
-        cost = 1
-    return max(cost, 0)
+        return default
+    return max(value, 0)
+
+
+def get_token_cost_per_generation() -> int:
+    return _read_int_env(get_token_cost_per_generation_env, default=10)
 
 
 def get_subscription_tokens_grant() -> int:
-    raw = (get_subscription_tokens_grant_env() or "100").strip()
-    try:
-        grant = int(raw)
-    except ValueError:
-        grant = 100
-    return max(grant, 0)
+    """Legacy flat grant — used as a fallback when an Adapty event arrives
+    without a recognised vendor_product_id."""
+    return _read_int_env(get_subscription_tokens_grant_env, default=100)
+
+
+def get_subscription_tokens_weekly() -> int:
+    return _read_int_env(get_subscription_tokens_weekly_env, default=50)
+
+
+def get_subscription_tokens_yearly() -> int:
+    return _read_int_env(get_subscription_tokens_yearly_env, default=500)
+
+
+def get_subscription_product_weekly() -> str:
+    return (get_subscription_product_weekly_env() or "weekly_subscription").strip()
+
+
+def get_subscription_product_yearly() -> str:
+    return (get_subscription_product_yearly_env() or "yearly_subscription").strip()
+
+
+def get_subscription_tiers() -> list[dict]:
+    """
+    Static catalogue of subscription products iOS can show on the paywall.
+    All values come from env so the operator can rename product ids or
+    retune token grants without a code rebuild.
+    """
+    cost = max(get_token_cost_per_generation(), 1)
+    weekly_tokens = get_subscription_tokens_weekly()
+    yearly_tokens = get_subscription_tokens_yearly()
+    return [
+        {
+            "product_id": get_subscription_product_weekly(),
+            "period": "weekly",
+            "tokens": weekly_tokens,
+            "generations": weekly_tokens // cost,
+        },
+        {
+            "product_id": get_subscription_product_yearly(),
+            "period": "yearly",
+            "tokens": yearly_tokens,
+            "generations": yearly_tokens // cost,
+        },
+    ]
+
+
+def _resolve_subscription_grant(vendor_product_id: Optional[str]) -> int:
+    """
+    Map an App Store / Adapty `vendor_product_id` to the right grant.
+    Returns the legacy flat grant for unknown / missing ids so the system
+    never silently grants 0 tokens when a new SKU appears before env is
+    updated.
+    """
+    if not vendor_product_id:
+        return get_subscription_tokens_grant()
+    normalised = vendor_product_id.strip()
+    if normalised == get_subscription_product_weekly():
+        return get_subscription_tokens_weekly()
+    if normalised == get_subscription_product_yearly():
+        return get_subscription_tokens_yearly()
+    return get_subscription_tokens_grant()
 
 
 def compute_generation_cost(request: Any) -> int:
     """
-    v1 pricing — flat per-generation. The function takes the request so
-    callers can swap in shape-aware pricing later without touching the
-    debit call sites.
+    Flat per-generation cost (configurable via TOKEN_COST_PER_GENERATION).
+    Kept as a function so shape-aware pricing can be added later without
+    touching the debit call sites.
     """
     return get_token_cost_per_generation()
 
@@ -338,12 +403,27 @@ def _extract_adapty_fields(payload: dict) -> dict:
         except ValueError:
             expires_at = None
 
+    # vendor_product_id (the App Store / Play product identifier) is what
+    # we map to a token-grant tier. Adapty places it in different spots
+    # depending on event type and SDK version — try the most common
+    # locations in order.
+    vendor_product_id: Optional[str] = None
+    for source in (event_props, payload):
+        for key in ("vendor_product_id", "product_id"):
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                vendor_product_id = value.strip()
+                break
+        if vendor_product_id:
+            break
+
     return {
         "event_id": event_id,
         "event_type": event_type,
         "customer_user_id": customer_user_id,
         "adapty_profile_id": adapty_profile_id,
         "expires_at": expires_at,
+        "vendor_product_id": vendor_product_id,
     }
 
 
@@ -388,10 +468,12 @@ async def apply_adapty_event(payload: dict) -> dict:
         }
 
     reason = _ADAPTY_EVENT_REASONS[event_type]
-    grant_tokens = get_subscription_tokens_grant() if event_type in (
-        "subscription_started",
-        "subscription_renewed",
-    ) else 0
+    vendor_product_id = fields.get("vendor_product_id")
+    grant_tokens = (
+        _resolve_subscription_grant(vendor_product_id)
+        if event_type in ("subscription_started", "subscription_renewed")
+        else 0
+    )
 
     async with async_session_maker() as session:
         # Idempotency: have we already logged this event_id?
@@ -437,7 +519,11 @@ async def apply_adapty_event(payload: dict) -> dict:
             balance_after=refreshed.tokens,
             reason=reason,
             reference_id=event_id,
-            metadata={"event_type": event_type, "payload": payload},
+            metadata={
+                "event_type": event_type,
+                "vendor_product_id": vendor_product_id,
+                "payload": payload,
+            },
         )
         await session.commit()
 
@@ -445,6 +531,8 @@ async def apply_adapty_event(payload: dict) -> dict:
             "status": "applied",
             "event_id": event_id,
             "event_type": event_type,
+            "vendor_product_id": vendor_product_id,
+            "granted_tokens": grant_tokens,
             "subscription": refreshed.subscription,
             "tokens": refreshed.tokens,
         }

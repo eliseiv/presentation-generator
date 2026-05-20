@@ -49,6 +49,22 @@ def get_subscription_tokens_grant_env():
     return os.getenv("SUBSCRIPTION_TOKENS_GRANT")
 
 
+def get_subscription_product_weekly_env():
+    return os.getenv("SUBSCRIPTION_PRODUCT_WEEKLY")
+
+
+def get_subscription_product_yearly_env():
+    return os.getenv("SUBSCRIPTION_PRODUCT_YEARLY")
+
+
+def get_subscription_tokens_weekly_env():
+    return os.getenv("SUBSCRIPTION_TOKENS_WEEKLY")
+
+
+def get_subscription_tokens_yearly_env():
+    return os.getenv("SUBSCRIPTION_TOKENS_YEARLY")
+
+
 def get_llm_provider_env():
     return os.getenv("LLM")
 

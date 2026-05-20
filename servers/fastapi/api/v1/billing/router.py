@@ -26,7 +26,9 @@ from services.billing_service import (
     admin_credit,
     apply_adapty_event,
     get_or_create_user,
+    get_subscription_tiers,
     get_subscription_tokens_grant,
+    get_subscription_tokens_weekly,
     get_token_cost_per_generation,
 )
 from services.database import get_async_session
@@ -41,6 +43,15 @@ logger = logging.getLogger(__name__)
 BILLING_ROUTER = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
 
 
+class SubscriptionTier(BaseModel):
+    product_id: str = Field(description="Adapty / App Store vendor product id.")
+    period: str = Field(description="Human-friendly tier period, e.g. 'weekly'.")
+    tokens: int = Field(description="Tokens granted on each purchase / renewal.")
+    generations: int = Field(
+        description="How many full generations the grant buys at the current price."
+    )
+
+
 class WalletResponse(BaseModel):
     user_id: str
     tokens: int
@@ -51,9 +62,19 @@ class WalletResponse(BaseModel):
     )
     subscription_tokens_grant: int = Field(
         description=(
-            "Tokens granted on each successful Adapty subscription "
-            "started / renewed event."
+            "Legacy field: equal to the smallest tier grant (weekly). Kept "
+            "for backwards compatibility with iOS clients shipped before "
+            "tiered pricing — new clients should read `subscription_tiers`."
         )
+    )
+    subscription_tiers: list[SubscriptionTier] = Field(
+        default_factory=list,
+        description=(
+            "Catalogue of subscription products iOS can render on the paywall. "
+            "Each entry maps an App Store / Adapty `vendor_product_id` to the "
+            "token grant it produces on `subscription_started` / "
+            "`subscription_renewed`."
+        ),
     )
 
 
@@ -77,6 +98,10 @@ async def get_my_wallet(
     sql_session: AsyncSession = Depends(get_async_session),
 ):
     user = await get_or_create_user(sql_session, x_user_id)
+    tiers = [SubscriptionTier(**t) for t in get_subscription_tiers()]
+    # Backwards-compat scalar: report the SMALLEST tier grant so a legacy
+    # client never over-promises. Tiered clients should use `subscription_tiers`.
+    weekly_grant = get_subscription_tokens_weekly() or get_subscription_tokens_grant()
     return WalletResponse(
         user_id=user.id,
         tokens=user.tokens,
@@ -87,7 +112,8 @@ async def get_my_wallet(
             else None
         ),
         token_cost_per_generation=get_token_cost_per_generation(),
-        subscription_tokens_grant=get_subscription_tokens_grant(),
+        subscription_tokens_grant=weekly_grant,
+        subscription_tiers=tiers,
     )
 
 

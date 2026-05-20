@@ -113,30 +113,39 @@ OPENAPI_DESCRIPTION = """
 ### Стоимость генерации
 
 Одна успешная генерация снимает `TOKEN_COST_PER_GENERATION` токенов
-(по умолчанию **1**) — одинаково для prompt / video / URL / 3-слайд /
+(по умолчанию **10**) — одинаково для prompt / video / URL / 3-слайд /
 30-слайд. При ошибке генерации токены автоматически возвращаются.
 
 Если токенов не хватает — `/generate*` вернёт **HTTP 402**:
 
 ```json
-{ "error": "insufficient_tokens", "balance": 0, "required": 1 }
+{ "error": "insufficient_tokens", "balance": 0, "required": 10 }
 ```
 
-### Пополнение баланса
+### Пополнение баланса (тарифы)
 
 Два пути:
 
-1. **Подписка через Adapty** (основной). Adapty шлёт webhook на
-   `/api/v1/billing/adapty/webhook`, мы выставляем `subscription=true`
-   и начисляем `SUBSCRIPTION_TOKENS_GRANT` токенов (по умолчанию
-   **100**) при `subscription_started` / `subscription_renewed`.
-   При `subscription_cancelled` / `subscription_expired` снимается
-   только флаг, токены остаются.
+1. **Подписка через Adapty** (основной). При покупке/продлении iOS
+   шлёт нам webhook, мы выставляем `subscription=true` и доначисляем
+   токены **по тиру** на основе `vendor_product_id` из payload Adapty:
+
+   | План | `vendor_product_id` (env) | Токены за период | Генераций (при 10 ток/ген) |
+   |---|---|---:|---:|
+   | Недельная подписка | `SUBSCRIPTION_PRODUCT_WEEKLY` *(default `weekly_subscription`)* | **50** | **5** |
+   | Годовая подписка | `SUBSCRIPTION_PRODUCT_YEARLY` *(default `yearly_subscription`)* | **500** | **50** |
+   | Неизвестный product | — | `SUBSCRIPTION_TOKENS_GRANT` *(fallback)* | — |
+
+   Каждое `subscription_started` и `subscription_renewed` доливает
+   токены по тиру — неиспользованные токены остаются и складываются с
+   новым начислением. `subscription_cancelled` / `subscription_expired`
+   только снимают флаг `subscription`; токены не сгорают.
+
 2. **Админ-пополнение** через `POST /api/v1/billing/credit` с заголовком
    `X-Admin-Key`.
 
-Текущий баланс и состояние подписки видны через
-`GET /api/v1/billing/me` с заголовком `X-User-Id`.
+Текущий баланс, состояние подписки и список тиров (для iOS-paywall)
+видны через `GET /api/v1/billing/me` с заголовком `X-User-Id`.
 """
 
 
@@ -389,7 +398,7 @@ def _set_error_examples(operation: dict, *, include_insufficient_tokens: bool = 
                         "detail": {
                             "error": "insufficient_tokens",
                             "balance": 0,
-                            "required": 1,
+                            "required": 10,
                         }
                     }
                 }
@@ -897,11 +906,25 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             description="Баланс и состояние подписки.",
             example={
                 "user_id": "user-ios-abc-123",
-                "tokens": 99,
+                "tokens": 90,
                 "subscription": True,
                 "subscription_expires_at": "2026-12-31T23:59:59",
-                "token_cost_per_generation": 1,
-                "subscription_tokens_grant": 100,
+                "token_cost_per_generation": 10,
+                "subscription_tokens_grant": 50,
+                "subscription_tiers": [
+                    {
+                        "product_id": "weekly_subscription",
+                        "period": "weekly",
+                        "tokens": 50,
+                        "generations": 5,
+                    },
+                    {
+                        "product_id": "yearly_subscription",
+                        "period": "yearly",
+                        "tokens": 500,
+                        "generations": 50,
+                    },
+                ],
             },
         )
 
@@ -960,10 +983,16 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             "Поддерживаются события:\n\n"
             "| `event_type` | Что делает |\n"
             "|---|---|\n"
-            "| `subscription_started` | `subscription=true` + `+SUBSCRIPTION_TOKENS_GRANT` |\n"
-            "| `subscription_renewed` | `+SUBSCRIPTION_TOKENS_GRANT` (флаг остаётся true) |\n"
+            "| `subscription_started` | `subscription=true` + начислить токены по тиру (см. таблицу в шапке) |\n"
+            "| `subscription_renewed` | начислить токены по тиру (флаг остаётся `true`) |\n"
             "| `subscription_cancelled` | `subscription=false`, токены не трогаем |\n"
             "| `subscription_expired` | `subscription=false`, токены не трогаем |\n\n"
+            "Тир определяется по `event_properties.vendor_product_id` (или "
+            "`product_id` если первого нет): `weekly_subscription` → 50 токенов, "
+            "`yearly_subscription` → 500 токенов, любой другой → fallback на "
+            "`SUBSCRIPTION_TOKENS_GRANT` (по умолчанию 100). Реальные имена "
+            "продуктов настраиваются через env `SUBSCRIPTION_PRODUCT_WEEKLY` / "
+            "`SUBSCRIPTION_PRODUCT_YEARLY`.\n\n"
             "Идемпотентность гарантируется на уровне `event_id` — повтор "
             "того же события не приводит к двойному начислению.\n\n"
             "Какие поля Adapty ожидаются в payload (упрощённо):\n\n"
@@ -976,6 +1005,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             "    \"profile_id\": \"adapty-profile-id\"\n"
             "  },\n"
             "  \"event_properties\": {\n"
+            "    \"vendor_product_id\": \"weekly_subscription\",\n"
             "    \"expires_at\": \"2026-12-31T23:59:59Z\"\n"
             "  }\n"
             "}\n"
@@ -994,13 +1024,15 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                 "application/json": {
                     "examples": {
                         "applied": {
-                            "summary": "Новое событие применено",
+                            "summary": "Новое событие применено (weekly)",
                             "value": {
                                 "status": "applied",
                                 "event_id": "evt-123",
                                 "event_type": "subscription_started",
+                                "vendor_product_id": "weekly_subscription",
+                                "granted_tokens": 50,
                                 "subscription": True,
-                                "tokens": 100,
+                                "tokens": 50,
                             },
                         },
                         "duplicate": {
