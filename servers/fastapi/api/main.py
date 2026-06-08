@@ -1207,6 +1207,17 @@ app.include_router(API_V1_MOCK_ROUTER)
 app.include_router(API_V1_AUTH_ROUTER)
 app.include_router(BILLING_ROUTER)
 
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    """
+    Liveness probe for the reverse proxy (Traefik) and container
+    healthcheck. Unauthenticated by design — ServiceApiKeyMiddleware only
+    guards /api/ and /app_data/, so this path passes straight through.
+    Returns 200 as long as the FastAPI process is accepting requests.
+    """
+    return {"status": "ok"}
+
 # Mount app_data and static assets (direct FastAPI access; nginx also serves /static in Docker).
 app_data_dir = get_app_data_directory_env()
 if app_data_dir:

@@ -1,10 +1,20 @@
-name: Build and Deploy
+name: Deploy to Traefik server
+
+# Deploys the backend to the shared Traefik host (87.239.135.154).
+#
+# Strategy: build-from-source ON the server. The repo working tree is
+# shipped to the server with scp from the runner (so the server itself
+# needs no GitHub credentials for this private repo), then the server
+# runs `docker compose -f docker-compose.traefik.yml up -d --build`.
+#
+# Traefik (in /opt/edge, owned by the host) terminates TLS and routes by
+# Host. Our container only joins the external `web` network and declares
+# routing via labels — see docker-compose.traefik.yml.
 
 on:
   push:
     branches:
       - main
-      - master
   workflow_dispatch:
 
 concurrency:
@@ -13,137 +23,99 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
+
+env:
+  APP_DIR: /opt/presenton
 
 jobs:
-  build:
-    name: Build backend image
+  deploy:
+    name: Build & deploy on server
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.image.outputs.image }}
-      tag: ${{ steps.image.outputs.tag }}
-      full_image: ${{ steps.image.outputs.full_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve image name
-        id: image
-        shell: bash
-        run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          TAG="backend-${GITHUB_SHA}"
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "full_image=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      # Copy the working tree to the server. app_data (the SQLite DB,
+      # mem0, exports) lives only on the server and is never in the
+      # checkout, so it is untouched by this sync.
+      - name: Copy repo to server
+        uses: appleboy/scp-action@v0.1.7
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          source: "."
+          target: ${{ env.APP_DIR }}
+          # Keep the transfer lean and never clobber server-only state.
+          rm: false
+          overwrite: true
+          strip_components: 0
 
-      - name: Build and push backend image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.backend
-          push: true
-          tags: |
-            ${{ steps.image.outputs.full_image }}
-            ${{ steps.image.outputs.image }}:backend-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  deploy:
-    name: Deploy to server
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy over SSH
+      - name: Build & start on server
         uses: appleboy/ssh-action@v1.2.0
         env:
-          BACKEND_IMAGE: ${{ needs.build.outputs.full_image }}
-          APP_DIR: ${{ secrets.SERVER_APP_DIR }}
-          REF_NAME: ${{ github.ref_name }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          APP_DIR: ${{ env.APP_DIR }}
+          LLM: ${{ secrets.LLM || 'openai' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4.1' }}
+          IMAGE_PROVIDER: ${{ secrets.IMAGE_PROVIDER || 'gpt-image-1.5' }}
+          SERVICE_API_KEY: ${{ secrets.SERVICE_API_KEY }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          ADAPTY_WEBHOOK_SECRET: ${{ secrets.ADAPTY_WEBHOOK_SECRET }}
+          FASTAPI_PUBLIC_URL: ${{ secrets.FASTAPI_PUBLIC_URL || 'https://appbackendnew.store' }}
+          TOKEN_COST_PER_GENERATION: ${{ secrets.TOKEN_COST_PER_GENERATION || '10' }}
+          SUBSCRIPTION_TOKENS_GRANT: ${{ secrets.SUBSCRIPTION_TOKENS_GRANT || '100' }}
+          SUBSCRIPTION_PRODUCT_WEEKLY: ${{ secrets.SUBSCRIPTION_PRODUCT_WEEKLY || 'weekly_subscription' }}
+          SUBSCRIPTION_PRODUCT_YEARLY: ${{ secrets.SUBSCRIPTION_PRODUCT_YEARLY || 'yearly_subscription' }}
+          SUBSCRIPTION_TOKENS_WEEKLY: ${{ secrets.SUBSCRIPTION_TOKENS_WEEKLY || '50' }}
+          SUBSCRIPTION_TOKENS_YEARLY: ${{ secrets.SUBSCRIPTION_TOKENS_YEARLY || '500' }}
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || '22' }}
-          envs: BACKEND_IMAGE,APP_DIR,REF_NAME,GHCR_USERNAME,GHCR_TOKEN
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          envs: APP_DIR,LLM,OPENAI_API_KEY,OPENAI_MODEL,IMAGE_PROVIDER,SERVICE_API_KEY,ADMIN_API_KEY,ADAPTY_WEBHOOK_SECRET,FASTAPI_PUBLIC_URL,TOKEN_COST_PER_GENERATION,SUBSCRIPTION_TOKENS_GRANT,SUBSCRIPTION_PRODUCT_WEEKLY,SUBSCRIPTION_PRODUCT_YEARLY,SUBSCRIPTION_TOKENS_WEEKLY,SUBSCRIPTION_TOKENS_YEARLY
           script_stop: true
+          command_timeout: 40m
           script: |
             set -eu
-
-            : "${APP_DIR:?SERVER_APP_DIR secret is required}"
-            : "${BACKEND_IMAGE:?BACKEND_IMAGE is required}"
-
             cd "$APP_DIR"
 
-            git fetch --all --prune
-            git reset --hard "origin/$REF_NAME"
-            git clean -fd --exclude=.env --exclude=app_data --exclude=secrets
+            # The shared external network Traefik lives on. Create only if
+            # missing — never recreate (would disrupt other services).
+            docker network inspect web >/dev/null 2>&1 || docker network create web
 
-            if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-            fi
+            # Rebuild .env from CI secrets — GitHub Secrets are the single
+            # source of truth, so secret rotation propagates on next deploy.
+            umask 077
+            cat > .env <<EOF
+            LLM=${LLM}
+            OPENAI_API_KEY=${OPENAI_API_KEY}
+            OPENAI_MODEL=${OPENAI_MODEL}
+            IMAGE_PROVIDER=${IMAGE_PROVIDER}
+            CAN_CHANGE_KEYS=True
+            SERVICE_API_KEY=${SERVICE_API_KEY}
+            ADMIN_API_KEY=${ADMIN_API_KEY}
+            ADAPTY_WEBHOOK_SECRET=${ADAPTY_WEBHOOK_SECRET}
+            FASTAPI_PUBLIC_URL=${FASTAPI_PUBLIC_URL}
+            TOKEN_COST_PER_GENERATION=${TOKEN_COST_PER_GENERATION}
+            SUBSCRIPTION_TOKENS_GRANT=${SUBSCRIPTION_TOKENS_GRANT}
+            SUBSCRIPTION_PRODUCT_WEEKLY=${SUBSCRIPTION_PRODUCT_WEEKLY}
+            SUBSCRIPTION_PRODUCT_YEARLY=${SUBSCRIPTION_PRODUCT_YEARLY}
+            SUBSCRIPTION_TOKENS_WEEKLY=${SUBSCRIPTION_TOKENS_WEEKLY}
+            SUBSCRIPTION_TOKENS_YEARLY=${SUBSCRIPTION_TOKENS_YEARLY}
+            EOF
 
-            export BACKEND_IMAGE
-
-            retry() {
-              attempt=1
-              max_attempts=5
-              delay=15
-              until "$@"; do
-                if [ "$attempt" -ge "$max_attempts" ]; then
-                  echo "Command failed after ${attempt} attempts: $*" >&2
-                  return 1
-                fi
-                echo "Command failed, retrying in ${delay}s (${attempt}/${max_attempts}): $*" >&2
-                attempt=$((attempt + 1))
-                sleep "$delay"
-                delay=$((delay * 2))
-              done
-            }
-
-            echo "DNS check for ghcr.io:"
-            getent hosts ghcr.io || true
-
-            # Free disk BEFORE pulling — every CI build adds a ~3.9 GB
-            # backend image, and "no space left on device" during pull
-            # is the most common failure on long-lived deploy targets.
-            # `docker image prune -af` only removes images not used by
-            # any running container, so the live container's image
-            # stays put.
-            echo "Disk usage before cleanup:"
-            df -h /var/lib | tail -2 || true
+            # Free space before the (heavy) build so an old image layer
+            # cache cannot fill the shared disk. Only removes images not
+            # used by a running container.
             docker image prune -af || true
-            docker buildx prune -af || true
-            echo "Disk usage after pre-pull cleanup:"
-            df -h /var/lib | tail -2 || true
+            docker builder prune -af --filter "until=72h" || true
 
-            retry docker pull "$BACKEND_IMAGE"
-            retry docker pull nginx:1.27-alpine
+            docker compose -f docker-compose.traefik.yml up -d --build --remove-orphans
 
-            docker compose -f docker-compose.deploy.yml --profile prod up -d --remove-orphans --no-build
+            # Drop dangling layers left by the rebuild.
+            docker image prune -f || true
 
-            # Once the new container is running, the previous SHA-tagged
-            # image becomes unused and can go. Whitelist the just-pulled
-            # tag and :backend-latest just in case Docker still considers
-            # them held by something transient.
-            IMAGE_REPO="${BACKEND_IMAGE%:*}"
-            ACTIVE_TAG="${BACKEND_IMAGE##*:}"
-            docker images "$IMAGE_REPO" --format '{{.Tag}}' \
-              | grep -vE "^(${ACTIVE_TAG}|backend-latest|<none>)$" \
-              | xargs -r -I {} docker rmi -f "${IMAGE_REPO}:{}" || true
-            docker image prune -af || true
-            docker buildx prune -af || true
-
-            docker compose -f docker-compose.deploy.yml --profile prod ps
+            docker compose -f docker-compose.traefik.yml ps
