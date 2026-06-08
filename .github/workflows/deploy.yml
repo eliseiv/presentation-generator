@@ -10,6 +10,13 @@ name: Deploy to Traefik server
 # Traefik (in /opt/edge, owned by the host) terminates TLS and routes by
 # Host. Our container only joins the external `web` network and declares
 # routing via labels — see docker-compose.traefik.yml.
+#
+# Secrets: ALL application secrets live in /opt/presenton/.env ON THE
+# SERVER (managed by the operator), not in GitHub. GitHub only holds the
+# SSH access secrets (SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, optional
+# SSH_PORT). The deploy never reads or rewrites .env — it is .gitignored
+# so the scp step can't clobber it, and the build step only checks that
+# it exists.
 
 on:
   push:
@@ -56,26 +63,12 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           APP_DIR: ${{ env.APP_DIR }}
-          LLM: ${{ secrets.LLM || 'openai' }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4.1' }}
-          IMAGE_PROVIDER: ${{ secrets.IMAGE_PROVIDER || 'gpt-image-1.5' }}
-          SERVICE_API_KEY: ${{ secrets.SERVICE_API_KEY }}
-          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
-          ADAPTY_WEBHOOK_SECRET: ${{ secrets.ADAPTY_WEBHOOK_SECRET }}
-          FASTAPI_PUBLIC_URL: ${{ secrets.FASTAPI_PUBLIC_URL || 'https://appbackendnew.store' }}
-          TOKEN_COST_PER_GENERATION: ${{ secrets.TOKEN_COST_PER_GENERATION || '10' }}
-          SUBSCRIPTION_TOKENS_GRANT: ${{ secrets.SUBSCRIPTION_TOKENS_GRANT || '100' }}
-          SUBSCRIPTION_PRODUCT_WEEKLY: ${{ secrets.SUBSCRIPTION_PRODUCT_WEEKLY || 'weekly_subscription' }}
-          SUBSCRIPTION_PRODUCT_YEARLY: ${{ secrets.SUBSCRIPTION_PRODUCT_YEARLY || 'yearly_subscription' }}
-          SUBSCRIPTION_TOKENS_WEEKLY: ${{ secrets.SUBSCRIPTION_TOKENS_WEEKLY || '50' }}
-          SUBSCRIPTION_TOKENS_YEARLY: ${{ secrets.SUBSCRIPTION_TOKENS_YEARLY || '500' }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
-          envs: APP_DIR,LLM,OPENAI_API_KEY,OPENAI_MODEL,IMAGE_PROVIDER,SERVICE_API_KEY,ADMIN_API_KEY,ADAPTY_WEBHOOK_SECRET,FASTAPI_PUBLIC_URL,TOKEN_COST_PER_GENERATION,SUBSCRIPTION_TOKENS_GRANT,SUBSCRIPTION_PRODUCT_WEEKLY,SUBSCRIPTION_PRODUCT_YEARLY,SUBSCRIPTION_TOKENS_WEEKLY,SUBSCRIPTION_TOKENS_YEARLY
+          envs: APP_DIR
           script_stop: true
           command_timeout: 40m
           script: |
@@ -86,26 +79,15 @@ jobs:
             # missing — never recreate (would disrupt other services).
             docker network inspect web >/dev/null 2>&1 || docker network create web
 
-            # Rebuild .env from CI secrets — GitHub Secrets are the single
-            # source of truth, so secret rotation propagates on next deploy.
-            umask 077
-            cat > .env <<EOF
-            LLM=${LLM}
-            OPENAI_API_KEY=${OPENAI_API_KEY}
-            OPENAI_MODEL=${OPENAI_MODEL}
-            IMAGE_PROVIDER=${IMAGE_PROVIDER}
-            CAN_CHANGE_KEYS=True
-            SERVICE_API_KEY=${SERVICE_API_KEY}
-            ADMIN_API_KEY=${ADMIN_API_KEY}
-            ADAPTY_WEBHOOK_SECRET=${ADAPTY_WEBHOOK_SECRET}
-            FASTAPI_PUBLIC_URL=${FASTAPI_PUBLIC_URL}
-            TOKEN_COST_PER_GENERATION=${TOKEN_COST_PER_GENERATION}
-            SUBSCRIPTION_TOKENS_GRANT=${SUBSCRIPTION_TOKENS_GRANT}
-            SUBSCRIPTION_PRODUCT_WEEKLY=${SUBSCRIPTION_PRODUCT_WEEKLY}
-            SUBSCRIPTION_PRODUCT_YEARLY=${SUBSCRIPTION_PRODUCT_YEARLY}
-            SUBSCRIPTION_TOKENS_WEEKLY=${SUBSCRIPTION_TOKENS_WEEKLY}
-            SUBSCRIPTION_TOKENS_YEARLY=${SUBSCRIPTION_TOKENS_YEARLY}
-            EOF
+            # Secrets live on the server, NOT in GitHub. The .env is
+            # managed by the operator directly in $APP_DIR and is never
+            # part of the git checkout (it is .gitignored), so the scp
+            # step above never touches it. Fail loudly if it is missing
+            # rather than booting with an empty config.
+            if [ ! -f .env ]; then
+              echo "ERROR: $APP_DIR/.env is missing. Create it on the server before deploying." >&2
+              exit 1
+            fi
 
             # Free space before the (heavy) build so an old image layer
             # cache cannot fill the shared disk. Only removes images not
