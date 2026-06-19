@@ -31,6 +31,9 @@ class TokenLedgerEntry(SQLModel, table=True):
         "adapty_subscription_cancelled"
     )
     REASON_ADAPTY_SUBSCRIPTION_EXPIRED: ClassVar[str] = "adapty_subscription_expired"
+    REASON_ADAPTY_NON_SUBSCRIPTION_PURCHASE: ClassVar[str] = (
+        "adapty_non_subscription_purchase"
+    )
     REASON_GENERATION_DEBIT: ClassVar[str] = "generation_debit"
     REASON_GENERATION_REFUND: ClassVar[str] = "generation_refund"
 

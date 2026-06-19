@@ -30,6 +30,7 @@ from utils.get_env import (
     get_subscription_tokens_weekly_env,
     get_subscription_tokens_yearly_env,
     get_token_cost_per_generation_env,
+    get_token_pack_products_env,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,64 @@ def _resolve_subscription_grant(vendor_product_id: Optional[str]) -> int:
     if normalised == get_subscription_product_yearly():
         return get_subscription_tokens_yearly()
     return get_subscription_tokens_grant()
+
+
+# Built-in catalogue of consumable token packs (one-time purchases). Mirrors
+# the App Store / Adapty vendor_product_ids and the token amount each grants.
+# Used as the default when TOKEN_PACK_PRODUCTS env is unset.
+_DEFAULT_TOKEN_PACKS: dict[str, int] = {
+    "100_tokens_9.99": 100,
+    "250_tokens_19.99": 250,
+    "500_tokens_34.99": 500,
+    "1000_tokens_59.99": 1000,
+    "2000_tokens_99.99": 2000,
+}
+
+
+def get_token_pack_products() -> dict[str, int]:
+    """
+    Map of consumable token-pack `vendor_product_id` -> tokens granted.
+
+    Configured via TOKEN_PACK_PRODUCTS as a comma-separated list of
+    "<product_id>:<tokens>" pairs so the operator can add or retune packs
+    without a code rebuild. Falls back to the built-in catalogue when the
+    env is unset; malformed pairs are skipped (and logged) rather than
+    discarding the whole map.
+    """
+    raw = (get_token_pack_products_env() or "").strip()
+    if not raw:
+        return dict(_DEFAULT_TOKEN_PACKS)
+    packs: dict[str, int] = {}
+    for chunk in raw.split(","):
+        item = chunk.strip()
+        if not item:
+            continue
+        # rpartition on ':' — product ids contain dots but never colons.
+        product_id, sep, tokens_raw = item.rpartition(":")
+        if not sep or not product_id.strip():
+            logger.warning("TOKEN_PACK_PRODUCTS: skipping malformed entry %r", item)
+            continue
+        try:
+            tokens = int(tokens_raw.strip())
+        except ValueError:
+            logger.warning("TOKEN_PACK_PRODUCTS: non-integer tokens in %r", item)
+            continue
+        if tokens <= 0:
+            logger.warning("TOKEN_PACK_PRODUCTS: non-positive tokens in %r", item)
+            continue
+        packs[product_id.strip()] = tokens
+    return packs or dict(_DEFAULT_TOKEN_PACKS)
+
+
+def _resolve_token_pack_grant(vendor_product_id: Optional[str]) -> int:
+    """
+    Tokens for a consumable token-pack purchase. Returns 0 for unknown /
+    missing product ids (the caller logs it) so we never grant a guessed
+    amount for a SKU that is not in the catalogue.
+    """
+    if not vendor_product_id:
+        return 0
+    return get_token_pack_products().get(vendor_product_id.strip(), 0)
 
 
 def compute_generation_cost(request: Any) -> int:
@@ -357,6 +416,16 @@ _ADAPTY_EVENT_REASONS = {
     "subscription_expired": TokenLedgerEntry.REASON_ADAPTY_SUBSCRIPTION_EXPIRED,
 }
 
+# Consumable one-time purchases (token packs) arrive as this event type.
+_ADAPTY_NON_SUBSCRIPTION_PURCHASE = "non_subscription_purchase"
+
+# Every ledger reason that originates from an Adapty event. Used for the
+# idempotency lookup so a duplicate delivery of ANY adapty event (including
+# token-pack purchases) is detected and skipped.
+_ALL_ADAPTY_REASONS = list(_ADAPTY_EVENT_REASONS.values()) + [
+    TokenLedgerEntry.REASON_ADAPTY_NON_SUBSCRIPTION_PURCHASE,
+]
+
 
 def _extract_adapty_fields(payload: dict) -> dict:
     """
@@ -449,7 +518,10 @@ async def apply_adapty_event(payload: dict) -> dict:
     if not event_id:
         logger.info("Adapty webhook ignored: missing event_id (probably a setup ping).")
         return {"status": "ignored", "reason": "missing_event_id"}
-    if event_type not in _ADAPTY_EVENT_REASONS:
+    if (
+        event_type not in _ADAPTY_EVENT_REASONS
+        and event_type != _ADAPTY_NON_SUBSCRIPTION_PURCHASE
+    ):
         logger.info(
             "Adapty webhook: ignoring event_type=%s (event_id=%s)",
             event_type or "<empty>",
@@ -467,20 +539,39 @@ async def apply_adapty_event(payload: dict) -> dict:
             "event_id": event_id,
         }
 
-    reason = _ADAPTY_EVENT_REASONS[event_type]
     vendor_product_id = fields.get("vendor_product_id")
-    grant_tokens = (
-        _resolve_subscription_grant(vendor_product_id)
-        if event_type in ("subscription_started", "subscription_renewed")
-        else 0
-    )
+    # subscription_active stays None for non-subscription (token-pack)
+    # purchases so we never flip the user's subscription flag on a
+    # consumable buy.
+    subscription_active: Optional[bool] = None
+    if event_type == _ADAPTY_NON_SUBSCRIPTION_PURCHASE:
+        reason = TokenLedgerEntry.REASON_ADAPTY_NON_SUBSCRIPTION_PURCHASE
+        grant_tokens = _resolve_token_pack_grant(vendor_product_id)
+        if grant_tokens == 0:
+            logger.warning(
+                "Adapty non_subscription_purchase with unmapped vendor_product_id=%r "
+                "(event_id=%s): recording a 0-token row for idempotency. Add it to "
+                "TOKEN_PACK_PRODUCTS to grant tokens.",
+                vendor_product_id, event_id,
+            )
+    else:
+        reason = _ADAPTY_EVENT_REASONS[event_type]
+        grant_tokens = (
+            _resolve_subscription_grant(vendor_product_id)
+            if event_type in ("subscription_started", "subscription_renewed")
+            else 0
+        )
+        subscription_active = event_type in (
+            "subscription_started",
+            "subscription_renewed",
+        )
 
     async with async_session_maker() as session:
         # Idempotency: have we already logged this event_id?
         existing = await session.execute(
             select(TokenLedgerEntry).where(
                 TokenLedgerEntry.reference_id == event_id,
-                TokenLedgerEntry.reason.in_(list(_ADAPTY_EVENT_REASONS.values())),
+                TokenLedgerEntry.reason.in_(_ALL_ADAPTY_REASONS),
             )
         )
         if existing.scalars().first() is not None:
@@ -488,15 +579,11 @@ async def apply_adapty_event(payload: dict) -> dict:
 
         await get_or_create_user(session, user_id)
 
-        # Update subscription flag + grant tokens atomically.
-        subscription_active = event_type in (
-            "subscription_started",
-            "subscription_renewed",
-        )
-        values: dict = {
-            "subscription": subscription_active,
-            "updated_at": get_current_utc_datetime(),
-        }
+        # Update subscription flag (subscription events only) + grant tokens
+        # atomically.
+        values: dict = {"updated_at": get_current_utc_datetime()}
+        if subscription_active is not None:
+            values["subscription"] = subscription_active
         if fields["adapty_profile_id"]:
             values["adapty_profile_id"] = fields["adapty_profile_id"]
         if fields["expires_at"]:

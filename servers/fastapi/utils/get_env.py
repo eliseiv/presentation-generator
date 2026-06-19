@@ -65,6 +65,10 @@ def get_subscription_tokens_yearly_env():
     return os.getenv("SUBSCRIPTION_TOKENS_YEARLY")
 
 
+def get_token_pack_products_env():
+    return os.getenv("TOKEN_PACK_PRODUCTS")
+
+
 def get_llm_provider_env():
     return os.getenv("LLM")
 
