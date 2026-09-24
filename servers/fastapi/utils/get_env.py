@@ -69,6 +69,22 @@ def get_token_pack_products_env():
     return os.getenv("TOKEN_PACK_PRODUCTS")
 
 
+def get_apple_bundle_id_env():
+    return os.getenv("APPLE_BUNDLE_ID") or os.getenv("APPSTORE_BUNDLE_ID")
+
+
+def get_storekit_allow_xcode_env():
+    return os.getenv("STOREKIT_ALLOW_XCODE")
+
+
+def get_appstore_environment_env():
+    return os.getenv("APPSTORE_ENVIRONMENT")
+
+
+def get_storekit_dev_skip_cert_chain_env():
+    return os.getenv("STOREKIT_DEV_SKIP_CERT_CHAIN_VERIFICATION")
+
+
 def get_llm_provider_env():
     return os.getenv("LLM")
 

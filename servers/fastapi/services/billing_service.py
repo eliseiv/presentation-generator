@@ -58,19 +58,19 @@ def get_subscription_tokens_grant() -> int:
 
 
 def get_subscription_tokens_weekly() -> int:
-    return _read_int_env(get_subscription_tokens_weekly_env, default=50)
+    return _read_int_env(get_subscription_tokens_weekly_env, default=100)
 
 
 def get_subscription_tokens_yearly() -> int:
-    return _read_int_env(get_subscription_tokens_yearly_env, default=500)
+    return _read_int_env(get_subscription_tokens_yearly_env, default=1000)
 
 
 def get_subscription_product_weekly() -> str:
-    return (get_subscription_product_weekly_env() or "weekly_subscription").strip()
+    return (get_subscription_product_weekly_env() or "week_6.99_nottrial").strip()
 
 
 def get_subscription_product_yearly() -> str:
-    return (get_subscription_product_yearly_env() or "yearly_subscription").strip()
+    return (get_subscription_product_yearly_env() or "yearly_49.99_nottrial").strip()
 
 
 def get_subscription_tiers() -> list[dict]:
@@ -108,17 +108,30 @@ def _resolve_subscription_grant(vendor_product_id: Optional[str]) -> int:
     if not vendor_product_id:
         return get_subscription_tokens_grant()
     normalised = vendor_product_id.strip()
-    if normalised == get_subscription_product_weekly():
-        return get_subscription_tokens_weekly()
-    if normalised == get_subscription_product_yearly():
-        return get_subscription_tokens_yearly()
-    return get_subscription_tokens_grant()
+    weekly = get_subscription_tokens_weekly()
+    yearly = get_subscription_tokens_yearly()
+    known = {
+        get_subscription_product_weekly(): weekly,
+        get_subscription_product_yearly(): yearly,
+        "week_6.99_nottrial": weekly,
+        "yearly_49.99_nottrial": yearly,
+        "weekly_6.99_not_trial": weekly,
+        "yearly_49.99_not_trial": yearly,
+        "weekly_subscription": weekly,
+        "yearly_subscription": yearly,
+    }
+    return known.get(normalised, get_subscription_tokens_grant())
 
 
 # Built-in catalogue of consumable token packs (one-time purchases). Mirrors
 # the App Store / Adapty vendor_product_ids and the token amount each grants.
 # Used as the default when TOKEN_PACK_PRODUCTS env is unset.
 _DEFAULT_TOKEN_PACKS: dict[str, int] = {
+    "100_Tokens_9.99": 100,
+    "250_Tokens_19.99": 250,
+    "500_Tokens_34.99": 500,
+    "1000_Tokens_59.99": 1000,
+    "2000_Tokens_99.99": 2000,
     "100_tokens_9.99": 100,
     "250_tokens_19.99": 250,
     "500_tokens_34.99": 500,
@@ -160,6 +173,102 @@ def get_token_pack_products() -> dict[str, int]:
             continue
         packs[product_id.strip()] = tokens
     return packs or dict(_DEFAULT_TOKEN_PACKS)
+
+
+_KNOWN_SUBSCRIPTION_PRODUCT_IDS = {
+    "week_6.99_nottrial",
+    "yearly_49.99_nottrial",
+    "weekly_6.99_not_trial",
+    "yearly_49.99_not_trial",
+    "weekly_subscription",
+    "yearly_subscription",
+}
+
+
+def list_storekit_products() -> list[dict]:
+    """Paywall catalog in the claude-ios GET /v1/tokens/products shape."""
+    products: list[dict] = []
+    seen: set[str] = set()
+    period_map = {"weekly": "week", "yearly": "year"}
+    for tier in get_subscription_tiers():
+        product_id = tier["product_id"]
+        seen.add(product_id)
+        products.append(
+            {
+                "productId": product_id,
+                "title": None,
+                "kind": "subscription",
+                "period": period_map.get(tier["period"], tier["period"]),
+                "price": None,
+                "currency": None,
+                "credits": None,
+                "isSpecialOffer": False,
+                "isDefault": False,
+            }
+        )
+    canonical_packs = (
+        "100_Tokens_9.99",
+        "250_Tokens_19.99",
+        "500_Tokens_34.99",
+        "1000_Tokens_59.99",
+        "2000_Tokens_99.99",
+    )
+    packs = get_token_pack_products()
+    for product_id in canonical_packs:
+        if product_id in seen or product_id not in packs:
+            continue
+        seen.add(product_id)
+        products.append(
+            {
+                "productId": product_id,
+                "title": None,
+                "kind": "tokens",
+                "period": None,
+                "price": None,
+                "currency": None,
+                "credits": packs[product_id],
+                "isSpecialOffer": False,
+                "isDefault": False,
+            }
+        )
+    seen_lower = {item.lower() for item in seen}
+    for product_id, credits in packs.items():
+        if product_id in seen or product_id.lower() in seen_lower:
+            continue
+        products.append(
+            {
+                "productId": product_id,
+                "title": None,
+                "kind": "tokens",
+                "period": None,
+                "price": None,
+                "currency": None,
+                "credits": credits,
+                "isSpecialOffer": False,
+                "isDefault": False,
+            }
+        )
+    return products
+
+
+def resolve_storekit_grant(product_id: Optional[str]) -> tuple[int, bool]:
+    """
+    Tokens + whether this SKU is a subscription.
+
+    Unknown products return (0, False). Unlike Adapty subscription fallback
+    we never guess a grant for a StoreKit SKU we do not recognise.
+    """
+    if not product_id:
+        return 0, False
+    normalised = product_id.strip()
+    pack = _resolve_token_pack_grant(normalised)
+    if pack:
+        return pack, False
+    weekly_id = get_subscription_product_weekly()
+    yearly_id = get_subscription_product_yearly()
+    if normalised in {weekly_id, yearly_id} or normalised in _KNOWN_SUBSCRIPTION_PRODUCT_IDS:
+        return _resolve_subscription_grant(normalised), True
+    return 0, False
 
 
 def _resolve_token_pack_grant(vendor_product_id: Optional[str]) -> int:
@@ -622,4 +731,147 @@ async def apply_adapty_event(payload: dict) -> dict:
             "granted_tokens": grant_tokens,
             "subscription": refreshed.subscription,
             "tokens": refreshed.tokens,
+        }
+
+
+async def credit_storekit_transaction(
+    *,
+    user_id: str,
+    transaction: dict,
+    expected_kind: str = "any",
+) -> dict:
+    """
+    Credit tokens for a verified StoreKit 2 transaction. Idempotent on
+    Apple `transactionId` (ledger.reference_id + storekit_purchase).
+    """
+    user_id = (user_id or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id header is required.")
+
+    product_id = transaction["product_id"]
+    transaction_id = transaction["transaction_id"]
+    grant_tokens, is_subscription = resolve_storekit_grant(product_id)
+    if expected_kind == "subscription" and not is_subscription:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unknown_product",
+                "message": f"Not a subscription product_id={product_id!r}.",
+                "product_id": product_id,
+            },
+        )
+    if expected_kind == "tokens" and is_subscription:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unknown_product",
+                "message": f"unknown token product",
+                "product_id": product_id,
+            },
+        )
+    if grant_tokens <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unknown_product",
+                "message": f"No token grant configured for product_id={product_id!r}.",
+                "product_id": product_id,
+            },
+        )
+    if transaction.get("revoked") or transaction.get("upgraded"):
+        if expected_kind == "tokens":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "transaction_revoked",
+                    "message": "Apple revoked or upgraded this transaction.",
+                },
+            )
+        grant_tokens = 0
+        is_subscription = True
+    elif is_subscription:
+        expires_at = transaction.get("expires_at")
+        if expires_at is not None and expires_at <= get_current_utc_datetime():
+            grant_tokens = 0
+
+    async with async_session_maker() as session:
+        existing = await session.execute(
+            select(TokenLedgerEntry).where(
+                TokenLedgerEntry.reference_id == transaction_id,
+                TokenLedgerEntry.reason == TokenLedgerEntry.REASON_STOREKIT_PURCHASE,
+            )
+        )
+        prior = existing.scalars().first()
+        if prior is not None:
+            user = await get_or_create_user(session, user_id)
+            return {
+                "status": "duplicate",
+                "transaction_id": transaction_id,
+                "product_id": product_id,
+                "granted_tokens": 0,
+                "user_id": user.id,
+                "tokens": user.tokens,
+                "subscription": user.subscription,
+                "subscription_expires_at": (
+                    user.subscription_expires_at.isoformat()
+                    if user.subscription_expires_at
+                    else None
+                ),
+            }
+
+        await get_or_create_user(session, user_id)
+        values: dict = {
+            "updated_at": get_current_utc_datetime(),
+        }
+        if grant_tokens:
+            values["tokens"] = UserModel.tokens + grant_tokens
+        if is_subscription:
+            expires_at = transaction.get("expires_at")
+            active = (
+                not transaction.get("revoked")
+                and not transaction.get("upgraded")
+                and expires_at is not None
+                and expires_at > get_current_utc_datetime()
+            )
+            values["subscription"] = active
+            if expires_at:
+                values["subscription_expires_at"] = expires_at
+
+        await session.execute(
+            update(UserModel).where(UserModel.id == user_id).values(**values)
+        )
+        refreshed = await session.get(UserModel, user_id)
+        if refreshed is None:
+            await session.rollback()
+            raise HTTPException(status_code=500, detail="User vanished.")
+
+        await _record_ledger(
+            session,
+            user_id=user_id,
+            delta=grant_tokens,
+            balance_after=refreshed.tokens,
+            reason=TokenLedgerEntry.REASON_STOREKIT_PURCHASE,
+            reference_id=transaction_id,
+            metadata={
+                "product_id": product_id,
+                "environment": transaction.get("environment"),
+                "type": transaction.get("type"),
+                "original_transaction_id": transaction.get("original_transaction_id"),
+                "bundle_id": transaction.get("bundle_id"),
+            },
+        )
+        await session.commit()
+        return {
+            "status": "applied",
+            "transaction_id": transaction_id,
+            "product_id": product_id,
+            "granted_tokens": grant_tokens,
+            "user_id": refreshed.id,
+            "tokens": refreshed.tokens,
+            "subscription": refreshed.subscription,
+            "subscription_expires_at": (
+                refreshed.subscription_expires_at.isoformat()
+                if refreshed.subscription_expires_at
+                else None
+            ),
         }

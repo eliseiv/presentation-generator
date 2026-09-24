@@ -24,6 +24,55 @@ Authorization: Bearer <SERVICE_API_KEY>
 X-API-Key: <SERVICE_API_KEY>
 ```
 
+Для кошелька и StoreKit дополнительно:
+
+```http
+X-User-Id: <тот же id, что в Adapty.identify>
+```
+
+## StoreKit (как в claude-ios)
+
+После успешной StoreKit-покупки **недостаточно** поллить `GET /api/v1/billing/me` — баланс не вырастет, пока сервер не получит JWS.
+
+Подписка:
+
+```http
+POST /v1/subscription/sync
+X-API-Key: <SERVICE_API_KEY>
+X-User-Id: <user id>
+Content-Type: application/json
+
+{ "userId": "<тот же user id>", "transaction": "<Transaction.jwsRepresentation>" }
+```
+
+Ответ `200`:
+
+```json
+{ "isSubscribed": true, "expiresAt": "2026-10-01T12:00:00+00:00", "plan": "week_6.99_nottrial" }
+```
+
+Пакет токенов:
+
+```http
+POST /v1/tokens/purchase
+```
+
+То же тело `{ "userId", "transaction" }`. Ответ `200`:
+
+```json
+{ "creditsAdded": 100, "newBalance": 100, "transactionId": "1000000123456789" }
+```
+
+Повтор той же транзакции: `creditsAdded=0`, баланс не меняется. После `200` можно `transaction.finish()`.
+
+Каталог:
+
+```http
+GET /v1/tokens/products
+```
+
+Те же пути есть и под `/api/v1/...`. Невалидный JWS / неизвестный SKU → `422`.
+
 ## Основной Flow
 
 Для iOS есть два сценария:

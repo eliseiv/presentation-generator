@@ -34,6 +34,7 @@ class TokenLedgerEntry(SQLModel, table=True):
     REASON_ADAPTY_NON_SUBSCRIPTION_PURCHASE: ClassVar[str] = (
         "adapty_non_subscription_purchase"
     )
+    REASON_STOREKIT_PURCHASE: ClassVar[str] = "storekit_purchase"
     REASON_GENERATION_DEBIT: ClassVar[str] = "generation_debit"
     REASON_GENERATION_REFUND: ClassVar[str] = "generation_refund"
 

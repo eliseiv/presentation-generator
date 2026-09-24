@@ -32,6 +32,8 @@ class ServiceApiKeyMiddleware(BaseHTTPMiddleware):
             return False
         if path.startswith("/api/"):
             return True
+        if path.startswith("/v1/subscription") or path.startswith("/v1/tokens"):
+            return True
         if path.startswith("/app_data/"):
             return True
         return False

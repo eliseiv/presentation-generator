@@ -10,6 +10,8 @@ from api.middlewares import ServiceApiKeyMiddleware, UserConfigEnvUpdateMiddlewa
 from api.v1.auth.router import API_V1_AUTH_ROUTER
 from api.v1.billing.router import BILLING_ROUTER
 from api.v1.mock.router import API_V1_MOCK_ROUTER
+from api.v1.subscription.router import SUBSCRIPTION_ROUTER
+from api.v1.tokens.router import TOKENS_ROUTER
 from api.v1.ppt.router import API_V1_PPT_ROUTER
 from api.v1.webhook.router import API_V1_WEBHOOK_ROUTER
 from utils.get_env import get_app_data_directory_env
@@ -132,8 +134,8 @@ OPENAPI_DESCRIPTION = """
 
    | План | `vendor_product_id` (env) | Токены за период | Генераций (при 10 ток/ген) |
    |---|---|---:|---:|
-   | Недельная подписка | `SUBSCRIPTION_PRODUCT_WEEKLY` *(default `weekly_subscription`)* | **50** | **5** |
-   | Годовая подписка | `SUBSCRIPTION_PRODUCT_YEARLY` *(default `yearly_subscription`)* | **500** | **50** |
+   | Недельная подписка | `SUBSCRIPTION_PRODUCT_WEEKLY` *(default `week_6.99_nottrial`)* | **100** | **10** |
+   | Годовая подписка | `SUBSCRIPTION_PRODUCT_YEARLY` *(default `yearly_49.99_nottrial`)* | **1000** | **100** |
    | Неизвестный product | — | `SUBSCRIPTION_TOKENS_GRANT` *(fallback)* | — |
 
    Каждое `subscription_started` и `subscription_renewed` доливает
@@ -185,6 +187,15 @@ OPENAPI_TAGS = [
         ),
     },
     {
+        "name": "8a. StoreKit / подписка",
+        "description": (
+            "Контракт как в claude-ios: после StoreKit-покупки iOS шлёт "
+            "`Transaction.jwsRepresentation` в `POST /v1/subscription/sync` "
+            "или `POST /v1/tokens/purchase`. Сервер проверяет JWS и начисляет "
+            "токены идемпотентно по `transactionId`."
+        ),
+    },
+    {
         "name": "8. Adapty webhook",
         "description": (
             "Входящий webhook от Adapty для событий подписки. Авторизация — "
@@ -209,8 +220,13 @@ IOS_OPENAPI_PATHS = {
     "/api/v1/billing/me": {"get"},
     "/api/v1/billing/credit": {"post"},
     "/api/v1/billing/adapty/webhook": {"post"},
+    "/api/v1/billing/storekit/verify": {"post"},
+    "/v1/subscription/sync": {"post"},
+    "/v1/tokens/purchase": {"post"},
+    "/v1/tokens/products": {"get"},
     "/api/v1/billing/cost/{presentation_id}": {"get"},
     "/api/v1/billing/cost/summary": {"get"},
+    "/health": {"get"},
 }
 
 app = FastAPI(
@@ -247,7 +263,7 @@ def custom_openapi():
     }
 
     for path, path_item in openapi_schema.get("paths", {}).items():
-        if path.startswith("/api/"):
+        if path.startswith("/api/") or path.startswith("/v1/"):
             for operation in path_item.values():
                 if isinstance(operation, dict):
                     operation.setdefault("security", [{"ServiceApiKey": []}])
@@ -910,19 +926,19 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                 "subscription": True,
                 "subscription_expires_at": "2026-12-31T23:59:59",
                 "token_cost_per_generation": 10,
-                "subscription_tokens_grant": 50,
+                "subscription_tokens_grant": 100,
                 "subscription_tiers": [
                     {
-                        "product_id": "weekly_subscription",
+                        "product_id": "week_6.99_nottrial",
                         "period": "weekly",
-                        "tokens": 50,
-                        "generations": 5,
+                        "tokens": 100,
+                        "generations": 10,
                     },
                     {
-                        "product_id": "yearly_subscription",
+                        "product_id": "yearly_49.99_nottrial",
                         "period": "yearly",
-                        "tokens": 500,
-                        "generations": 50,
+                        "tokens": 1000,
+                        "generations": 100,
                     },
                 ],
             },
@@ -966,6 +982,189 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             example={"user_id": "user-ios-abc-123", "balance": 5},
         )
 
+    storekit_operation = _set_operation(
+        openapi_schema,
+        "/api/v1/billing/storekit/verify",
+        "post",
+        summary="Проверить StoreKit 2 JWS и начислить токены",
+        description=(
+            "Этот endpoint вызывает **iOS-клиент** сразу после успешной "
+            "StoreKit-покупки (и при восстановлении незавершённых транзакций).\n\n"
+            "**Заголовки**: `X-API-Key`, `X-User-Id`.\n\n"
+            "**Body**:\n\n"
+            "```json\n"
+            "{ \"signedTransaction\": \"<Transaction.jwsRepresentation>\" }\n"
+            "```\n\n"
+            "Алиас поля: `jws`.\n\n"
+            "Sandbox/Production: проверяется подпись ES256 и цепочка x5c до "
+            "Apple Root CA - G3. Среда `Xcode` (StoreKit Testing) принимается "
+            "при `STOREKIT_ALLOW_XCODE=true`.\n\n"
+            "Идемпотентность — по Apple `transactionId`. Повтор того же JWS "
+            "вернёт `status=duplicate` и текущий баланс, без второго начисления."
+        ),
+        response_description="Кошелёк после начисления.",
+    )
+    if storekit_operation:
+        _set_tags(storekit_operation, "8a. StoreKit JWS")
+        _set_error_examples(storekit_operation)
+        _set_json_request_examples(
+            storekit_operation,
+            {
+                "jws": {
+                    "summary": "JWS после покупки",
+                    "value": {
+                        "signedTransaction": "eyJhbGciOiJFUzI1NiIsIng1YyI6Wy4uLl19.eyJ0cmFuc2FjdGlvbklkIjoiMTAwMSIsInByb2R1Y3RJZCI6IndlZWtfNi45OV9ub3R0cmlhbCJ9.signature"
+                    },
+                }
+            },
+        )
+        _set_json_response_example(
+            storekit_operation,
+            "200",
+            description="Токены начислены или транзакция уже применялась.",
+            example={
+                "status": "applied",
+                "transaction_id": "1000000123456789",
+                "product_id": "week_6.99_nottrial",
+                "granted_tokens": 100,
+                "user_id": "user-ios-abc-123",
+                "tokens": 100,
+                "subscription": True,
+                "subscription_expires_at": "2026-10-01T12:00:00+00:00",
+                "token_cost_per_generation": 10,
+                "subscription_tokens_grant": 100,
+                "subscription_tiers": [
+                    {
+                        "product_id": "week_6.99_nottrial",
+                        "period": "weekly",
+                        "tokens": 100,
+                        "generations": 10,
+                    }
+                ],
+            },
+        )
+
+    subscription_sync_operation = _set_operation(
+        openapi_schema,
+        "/v1/subscription/sync",
+        "post",
+        summary="Синхронизировать подписку",
+        description=(
+            "Контракт claude-ios. iOS вызывает после покупки/продления "
+            "подписки StoreKit.\n\n"
+            "**Заголовки**: `X-API-Key`, `X-User-Id`.\n\n"
+            "**Body**:\n\n"
+            "```json\n"
+            "{ \"userId\": \"<тот же, что X-User-Id>\", "
+            "\"transaction\": \"<Transaction.jwsRepresentation>\" }\n"
+            "```\n\n"
+            "Идемпотентно по Apple `transactionId`."
+        ),
+        response_description="Состояние подписки после синхронизации.",
+    )
+    if subscription_sync_operation:
+        _set_tags(subscription_sync_operation, "8a. StoreKit / подписка")
+        _set_error_examples(subscription_sync_operation)
+        _set_json_request_examples(
+            subscription_sync_operation,
+            {
+                "jws": {
+                    "summary": "JWS после покупки подписки",
+                    "value": {
+                        "userId": "user-ios-abc-123",
+                        "transaction": "eyJhbGciOiJFUzI1NiIsIng1YyI6Wy4uLl19.eyJ0cmFuc2FjdGlvbklkIjoiMTAwMSIsInByb2R1Y3RJZCI6IndlZWtfNi45OV9ub3R0cmlhbCJ9.signature",
+                    },
+                }
+            },
+        )
+        _set_json_response_example(
+            subscription_sync_operation,
+            "200",
+            description="Подписка синхронизирована.",
+            example={
+                "isSubscribed": True,
+                "expiresAt": "2026-10-01T12:00:00+00:00",
+                "plan": "week_6.99_nottrial",
+            },
+        )
+
+    token_purchase_operation = _set_operation(
+        openapi_schema,
+        "/v1/tokens/purchase",
+        "post",
+        summary="Купить пакет токенов",
+        description=(
+            "Контракт claude-ios. iOS вызывает после consumable IAP.\n\n"
+            "**Заголовки**: `X-API-Key`, `X-User-Id`.\n\n"
+            "**Body**:\n\n"
+            "```json\n"
+            "{ \"userId\": \"<тот же, что X-User-Id>\", "
+            "\"transaction\": \"<Transaction.jwsRepresentation>\" }\n"
+            "```\n\n"
+            "Повтор той же транзакции: `creditsAdded=0`."
+        ),
+        response_description="Начисление пакета токенов.",
+    )
+    if token_purchase_operation:
+        _set_tags(token_purchase_operation, "8a. StoreKit / подписка")
+        _set_error_examples(token_purchase_operation)
+        _set_json_request_examples(
+            token_purchase_operation,
+            {
+                "jws": {
+                    "summary": "JWS после покупки пакета",
+                    "value": {
+                        "userId": "user-ios-abc-123",
+                        "transaction": "eyJhbGciOiJFUzI1NiIsIng1YyI6Wy4uLl19.eyJ0cmFuc2FjdGlvbklkIjoiMTAwMiIsInByb2R1Y3RJZCI6IjEwMF9Ub2tlbnNfOS45OSJ9.signature",
+                    },
+                }
+            },
+        )
+        _set_json_response_example(
+            token_purchase_operation,
+            "200",
+            description="Токены начислены или транзакция уже применялась.",
+            example={
+                "creditsAdded": 100,
+                "newBalance": 100,
+                "transactionId": "1000000123456789",
+            },
+        )
+
+    token_products_operation = _set_operation(
+        openapi_schema,
+        "/v1/tokens/products",
+        "get",
+        summary="Каталог пакетов токенов",
+        description=(
+            "Контракт claude-ios. Каталог подписок и consumable-пакетов. "
+            "Цены клиент берёт из StoreKit."
+        ),
+        response_description="Каталог продуктов.",
+    )
+    if token_products_operation:
+        _set_tags(token_products_operation, "8a. StoreKit / подписка")
+        _set_json_response_example(
+            token_products_operation,
+            "200",
+            description="Каталог продуктов.",
+            example={
+                "products": [
+                    {
+                        "productId": "week_6.99_nottrial",
+                        "kind": "subscription",
+                        "period": "week",
+                        "credits": None,
+                    },
+                    {
+                        "productId": "100_Tokens_9.99",
+                        "kind": "tokens",
+                        "credits": 100,
+                    },
+                ]
+            },
+        )
+
     adapty_operation = _set_operation(
         openapi_schema,
         "/api/v1/billing/adapty/webhook",
@@ -988,8 +1187,8 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             "| `subscription_cancelled` | `subscription=false`, токены не трогаем |\n"
             "| `subscription_expired` | `subscription=false`, токены не трогаем |\n\n"
             "Тир определяется по `event_properties.vendor_product_id` (или "
-            "`product_id` если первого нет): `weekly_subscription` → 50 токенов, "
-            "`yearly_subscription` → 500 токенов, любой другой → fallback на "
+            "`product_id` если первого нет): `week_6.99_nottrial` → 100 токенов, "
+            "`yearly_49.99_nottrial` → 1000 токенов, любой другой → fallback на "
             "`SUBSCRIPTION_TOKENS_GRANT` (по умолчанию 100). Реальные имена "
             "продуктов настраиваются через env `SUBSCRIPTION_PRODUCT_WEEKLY` / "
             "`SUBSCRIPTION_PRODUCT_YEARLY`.\n\n"
@@ -1005,7 +1204,7 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
             "    \"profile_id\": \"adapty-profile-id\"\n"
             "  },\n"
             "  \"event_properties\": {\n"
-            "    \"vendor_product_id\": \"weekly_subscription\",\n"
+            "    \"vendor_product_id\": \"week_6.99_nottrial\",\n"
             "    \"expires_at\": \"2026-12-31T23:59:59Z\"\n"
             "  }\n"
             "}\n"
@@ -1029,10 +1228,10 @@ def _apply_swagger_examples(openapi_schema: dict) -> None:
                                 "status": "applied",
                                 "event_id": "evt-123",
                                 "event_type": "subscription_started",
-                                "vendor_product_id": "weekly_subscription",
-                                "granted_tokens": 50,
+                                "vendor_product_id": "week_6.99_nottrial",
+                                "granted_tokens": 100,
                                 "subscription": True,
-                                "tokens": 50,
+                                "tokens": 100,
                             },
                         },
                         "duplicate": {
@@ -1206,15 +1405,25 @@ app.include_router(API_V1_WEBHOOK_ROUTER)
 app.include_router(API_V1_MOCK_ROUTER)
 app.include_router(API_V1_AUTH_ROUTER)
 app.include_router(BILLING_ROUTER)
+app.include_router(SUBSCRIPTION_ROUTER)
+app.include_router(TOKENS_ROUTER)
 
 
 @app.get("/healthz", include_in_schema=False)
+@app.get(
+    "/health",
+    summary="Health check",
+    tags=["Health"],
+)
 async def healthz():
     """
     Liveness probe for the reverse proxy (Traefik) and container
     healthcheck. Unauthenticated by design — ServiceApiKeyMiddleware only
     guards /api/ and /app_data/, so this path passes straight through.
     Returns 200 as long as the FastAPI process is accepting requests.
+
+    `/healthz` stays as the internal probe. `/health` is the public alias
+    used by edge checks and clone playbooks.
     """
     return {"status": "ok"}
 

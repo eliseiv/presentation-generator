@@ -25,12 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.billing_service import (
     admin_credit,
     apply_adapty_event,
+    credit_storekit_transaction,
     get_or_create_user,
     get_subscription_tiers,
     get_subscription_tokens_grant,
     get_subscription_tokens_weekly,
     get_token_cost_per_generation,
 )
+from services.storekit_jws import parse_and_verify_storekit_jws
 from services.database import get_async_session
 from services.llm_cost_service import get_cost_summary, get_presentation_cost
 from utils.get_env import (
@@ -92,6 +94,52 @@ class AdminCreditResponse(BaseModel):
     balance: int
 
 
+class StoreKitVerifyRequest(BaseModel):
+    signed_transaction: Optional[str] = Field(
+        default=None,
+        alias="signedTransaction",
+        description="StoreKit 2 Transaction.jwsRepresentation compact JWS.",
+    )
+    transaction: Optional[str] = Field(
+        default=None,
+        description="claude-ios alias for signedTransaction.",
+    )
+    jws: Optional[str] = Field(
+        default=None,
+        description="Alias for signedTransaction.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    def compact_jws(self) -> str:
+        token = (
+            self.signed_transaction or self.transaction or self.jws or ""
+        ).strip()
+        if not token:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "missing_jws",
+                    "message": "Body must include transaction (or signedTransaction).",
+                },
+            )
+        return token
+
+
+class StoreKitVerifyResponse(BaseModel):
+    status: str
+    transaction_id: str
+    product_id: str
+    granted_tokens: int
+    user_id: str
+    tokens: int
+    subscription: bool
+    subscription_expires_at: Optional[str] = None
+    token_cost_per_generation: int
+    subscription_tokens_grant: int
+    subscription_tiers: list[SubscriptionTier] = Field(default_factory=list)
+
+
 @BILLING_ROUTER.get("/me", response_model=WalletResponse, summary="Get wallet for the current user")
 async def get_my_wallet(
     x_user_id: str = Header(..., alias="X-User-Id"),
@@ -111,6 +159,29 @@ async def get_my_wallet(
             if user.subscription_expires_at
             else None
         ),
+        token_cost_per_generation=get_token_cost_per_generation(),
+        subscription_tokens_grant=weekly_grant,
+        subscription_tiers=tiers,
+    )
+
+
+@BILLING_ROUTER.post(
+    "/storekit/verify",
+    response_model=StoreKitVerifyResponse,
+    summary="Verify StoreKit 2 JWS and credit tokens",
+)
+async def verify_storekit_transaction(
+    body: StoreKitVerifyRequest,
+    x_user_id: str = Header(..., alias="X-User-Id"),
+):
+    transaction = parse_and_verify_storekit_jws(body.compact_jws())
+    result = await credit_storekit_transaction(
+        user_id=x_user_id, transaction=transaction
+    )
+    tiers = [SubscriptionTier(**t) for t in get_subscription_tiers()]
+    weekly_grant = get_subscription_tokens_weekly() or get_subscription_tokens_grant()
+    return StoreKitVerifyResponse(
+        **result,
         token_cost_per_generation=get_token_cost_per_generation(),
         subscription_tokens_grant=weekly_grant,
         subscription_tiers=tiers,
