@@ -146,7 +146,7 @@ const Timeline: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
 
                 {/* card container */}
                 <div className="mt-4">
-                  <div className="rounded-[16px] bg-white shadow-[0_16px_40px_rgba(0,0,0,0.08)] px-6 pt-6 pb-5 text-center w-[260px]"
+                  <div className="rounded-[16px] bg-white px-6 pt-6 pb-5 text-center w-[260px]"
                     style={{ backgroundColor: 'var(--card-color, #FFFFFF)' }}
                   >
                     <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>

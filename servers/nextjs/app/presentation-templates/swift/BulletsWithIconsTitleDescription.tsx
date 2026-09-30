@@ -206,7 +206,7 @@ const InfographicFourIcons: React.FC<SlideLayoutProps> = ({ data }) => {
               <div key={idx} className="flex flex-col items-center text-center">
                 <div className="relative">
                   <div
-                    className="w-40 h-40 rounded-full flex items-center justify-center shadow"
+                    className="w-24 h-24 rounded-xl flex items-center justify-center"
                     style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}
                   >
                     {/* Icon */}

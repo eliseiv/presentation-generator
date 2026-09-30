@@ -83,16 +83,6 @@ const CommitmentTwoPoints: React.FC<SlideLayoutProps> = ({ data: slideData }) =>
           </div>
         </div>
 
-        {/* Subtle background motif */}
-        <div
-          className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-[140px] w-[900px] h-[260px]"
-          style={{
-            background:
-              "radial-gradient(closest-side, rgba(17,24,39,0.06), transparent 70%)",
-            filter: "blur(0.2px)",
-          }}
-        ></div>
-
         {/* Content grid */}
         <div className="px-12 pt-4 pb-28 grid grid-cols-[48%_52%] gap-10 items-start max-h-[620px] overflow-hidden">
           {/* Left heading and statement */}

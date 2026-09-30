@@ -155,21 +155,16 @@ const FeatureCards: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
           </div>
         </div>
 
-        {/* Decorative right image area removed to keep imagery-driven design */}
-
         <div className="px-12 pt-3">
           <h1 className="text-[48px] leading-[1.1] font-semibold" style={{ color: "var(--background-text, #111827)" }}>{slideData?.title}</h1>
           <p className="mt-3 text-[16px] max-w-[760px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.description}</p>
         </div>
 
-        {/* Cyan band */}
-        <div className="absolute left-0 right-0 bottom-20 h-[160px]" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}></div>
-
         {/* Feature cards */}
         <div className="relative px-12 mt-8 pb-28 max-h-[420px] overflow-hidden">
           <div className="grid grid-flow-col auto-cols-[260px] gap-6 justify-center">
             {features.slice(0, 4).map((f, i) => (
-              <div key={i} className="rounded-[22px] shadow-[0_16px_40px_rgba(0,0,0,0.08)] overflow-hidden" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>
+              <div key={i} className="rounded-[22px] overflow-hidden" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>
                 <div className="px-6 py-5">
                   <div className="w-10 h-10 rounded-sm flex items-center justify-center" style={{ backgroundColor: 'var(--primary-color, #FFFFFF)' }}>
                     <RemoteSvgIcon

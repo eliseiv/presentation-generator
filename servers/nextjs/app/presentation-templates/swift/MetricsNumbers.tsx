@@ -148,12 +148,9 @@ const MetricsNumbers: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
 
           {/* Right stacked metric cards */}
           <div className="relative">
-            {/* decorative circle on the right */}
-            <div className="absolute top-6 -right-24 w-[220px] h-[220px] rounded-full border" style={{ borderColor: "rgba(0,0,0,0.2)" }}></div>
-
             <div className="flex flex-col gap-6">
               {metrics.slice(0, 3).map((m, i) => (
-                <div key={i} className="rounded-[18px] px-6 py-5 grid grid-cols-[38%_62%] items-start shadow-[0_16px_40px_rgba(0,0,0,0.08)]" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>
+                <div key={i} className="rounded-[18px] px-6 py-5 grid grid-cols-[38%_62%] items-start" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>
                   <div className="text-[40px] font-semibold" style={{ color: 'var(--primary-text, #111827)' }}>{m.value}</div>
                   <div>
                     <div className="text-[16px] font-semibold" style={{ color: 'var(--primary-text, #111827)' }}>{m.line1}</div>
