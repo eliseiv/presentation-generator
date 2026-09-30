@@ -1,7 +1,6 @@
 import React from "react"
 import * as z from "zod"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "simple-bullet-points-layout"
 const layoutName = "Simple Bullet Points"
@@ -35,7 +34,7 @@ const Schema = z
       .min(1)
       .max(4)
       .default([PointSchema.parse({}), PointSchema.parse({}), PointSchema.parse({}), PointSchema.parse({ title: "Your Title Here", body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa." })]),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
     title: "Our Commitment to Innovation",

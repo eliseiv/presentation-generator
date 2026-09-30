@@ -1,7 +1,6 @@
 import React from "react"
 import * as z from "zod"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "IntroSlideLayout"
 const layoutName = "Intro Slide Layout"
@@ -39,7 +38,7 @@ const Schema = z
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
       ),
 
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
 
     introCard: z
       .object({

@@ -1,6 +1,5 @@
 import React from 'react'
 import * as z from "zod";
-import { websiteField } from "../dummyWebsite";
 
 
 const ImageSchema = z.object({
@@ -50,7 +49,7 @@ const Schema = z.object({
       __icon_query__: "photo placeholder",
     }),
     websiteBar: z.object({
-      websiteText: websiteField.meta({
+      websiteText: z.string().max(60).optional().default("").meta({
         description: "Real company website only. Leave empty if unknown.",
       }),
       actionIcon: IconSchema.default({

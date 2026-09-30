@@ -1,8 +1,7 @@
 import React from "react"
 import * as z from "zod"
 import { resolveBackendAssetUrl } from "@/utils/api"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "Timeline"
 const layoutName = "Timeline"
@@ -60,7 +59,7 @@ const Schema = z
         ItemSchema.parse({ year: "2020", heading: "Key Milestone in 2022", body: "Lorem ipsum dolor" }),
         ItemSchema.parse({ year: "2021", heading: "Global Expansion in 2024", body: "Lorem ipsum dolor" }),
       ]),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
     title: "Our Journey at a Glance",

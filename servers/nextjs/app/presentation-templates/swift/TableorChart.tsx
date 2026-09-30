@@ -15,8 +15,7 @@ import {
   Pie,
   Cell,
 } from "recharts"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "tableorChart"
 const layoutName = "Table Or Chart"
@@ -90,7 +89,7 @@ const Schema = z
         showLabels: true,
       }),
 
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
     title: "Data Table or Chart",

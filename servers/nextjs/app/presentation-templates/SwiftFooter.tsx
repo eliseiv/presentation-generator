@@ -1,5 +1,5 @@
 import React from "react";
-import { displayWebsite } from "../dummyWebsite";
+import { displayWebsite } from "./dummyWebsite";
 
 export function SwiftFooter({ website }: { website?: string }) {
   const url = displayWebsite(website);

@@ -1,7 +1,6 @@
 import React from "react"
 import * as z from "zod"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "SwiftTableOfContents"
 const layoutName = "Table Of Contents"
@@ -41,7 +40,7 @@ const Schema = z
         { title: "Business Model", description: "How we create and capture value." },
         { title: "Conclusion", description: "Closing notes and next steps." },
       ]),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
     title: "Table of Contents",

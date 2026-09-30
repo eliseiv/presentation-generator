@@ -1,7 +1,6 @@
 import React from "react"
 import * as z from "zod"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "image-list-description-slide"
 const layoutName = "Image List Description"
@@ -63,7 +62,7 @@ const Schema = z
         ItemSchema.parse({ title: "Another Item", description: "Concise supporting text.", image: ImageSchema.parse({}) }),
         ItemSchema.parse({ title: "Third Item", description: "Concise supporting text.", image: ImageSchema.parse({}) }),
       ]),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
 

@@ -1,8 +1,7 @@
 import React from "react"
 import * as z from "zod"
 import { RemoteSvgIcon } from "@/app/hooks/useRemoteSvgIcon";
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "icon-bullet-list-description-slide"
 const layoutName = "Icon Bullet List Description"
@@ -85,7 +84,7 @@ const Schema = z
           }),
         },
       ]),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
 

@@ -1,7 +1,6 @@
 import React from "react"
 import * as z from "zod"
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "MetricsNumbers"
 const layoutName = "Metrics Numbers"
@@ -44,7 +43,7 @@ const Schema = z
       .default(
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
       ),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
     metrics: z
       .array(MetricSchema)
       .min(1)

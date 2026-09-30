@@ -3,8 +3,7 @@ import * as z from "zod"
 
 import { IconSchema } from '../defaultSchemes';
 import { RemoteSvgIcon } from "@/app/hooks/useRemoteSvgIcon";
-import { websiteField } from "../dummyWebsite"
-import { SwiftFooter } from "./SwiftFooter"
+import { SwiftFooter } from "../SwiftFooter"
 
 const layoutId = "bullet-with-icons-title-description"
 const layoutName = "Bullet With Icons Title Description"
@@ -93,7 +92,7 @@ const Schema = z
             "Concise supporting text under the fourth icon explaining the point.",
         },
       ]),
-    website: websiteField,
+    website: z.string().max(60).optional().default(""),
   })
   .default({
     title: "Our Infographic",
