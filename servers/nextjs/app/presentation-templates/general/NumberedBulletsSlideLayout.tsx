@@ -85,7 +85,7 @@ const NumberedBulletsSlideLayout: React.FC<NumberedBulletsSlideLayoutProps> = ({
                 )}
 
                 {/* Main Content Container */}
-                <div className="px-8 sm:px-12 lg:px-20 pt-12 pb-8 h-full">
+                <div className="px-8 sm:px-12 lg:px-20 pt-12 pb-24 h-full overflow-hidden">
                     {/* Top Section - Title and Image */}
                     <div className="flex items-start justify-between mb-8">
                         {/* Title Section */}
@@ -108,8 +108,8 @@ const NumberedBulletsSlideLayout: React.FC<NumberedBulletsSlideLayoutProps> = ({
                     </div>
 
                     {/* Numbered Bullet Points */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                        {bulletPoints.map((bullet, index) => (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 max-h-[280px] overflow-hidden">
+                        {bulletPoints.slice(0, 3).map((bullet, index) => (
                             <div key={index} className="flex items-start space-x-4">
                                 {/* Number */}
                                 <div className="flex-shrink-0">
@@ -119,38 +119,16 @@ const NumberedBulletsSlideLayout: React.FC<NumberedBulletsSlideLayoutProps> = ({
                                 </div>
 
                                 {/* Content */}
-                                <div className="flex-1 pt-2">
+                                <div className="flex-1 pt-2 min-w-0">
                                     <h3 style={{ color: "var(--background-text,#111827)" }} className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">
                                         {bullet.title}
                                     </h3>
-                                    <p style={{ color: "var(--background-text,#4b5563)" }} className="text-base text-gray-700 leading-relaxed">
+                                    <p style={{ color: "var(--background-text,#4b5563)" }} className="text-base text-gray-700 leading-relaxed line-clamp-3">
                                         {bullet.description}
                                     </p>
                                 </div>
                             </div>
                         ))}
-                    </div>
-
-                    {/* Decorative Wave Pattern at Bottom */}
-                    <div className="absolute bottom-0 left-0 right-0 h-20 overflow-hidden">
-                        <svg
-                            className="w-full h-full opacity-20"
-                            viewBox="0 0 1200 200"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M0 100C300 150 600 50 900 100C1050 125 1125 100 1200 100V200H0V100Z"
-                                fill="url(#wave-gradient)"
-                            />
-                            <defs>
-                                <linearGradient id="wave-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                    <stop offset="0%" stopColor="var(--primary-color,#9333ea)" />
-                                    <stop offset="50%" stopColor="var(--primary-color,#9333ea)" />
-                                    <stop offset="100%" stopColor="var(--primary-color,#9333ea)" />
-                                </linearGradient>
-                            </defs>
-                        </svg>
                     </div>
                 </div>
             </div>

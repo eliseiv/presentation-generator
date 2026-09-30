@@ -15,6 +15,8 @@ import {
   Pie,
   Cell,
 } from "recharts"
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "tableorChart"
 const layoutName = "Table Or Chart"
@@ -88,7 +90,7 @@ const Schema = z
         showLabels: true,
       }),
 
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
   })
   .default({
     title: "Data Table or Chart",
@@ -112,7 +114,7 @@ const Schema = z
 
       showLabels: true,
     },
-    website: "www.yourwebsite.com",
+    website: "",
   })
 
 const CHART_COLORS = [
@@ -169,7 +171,7 @@ const TableOrChart: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
         </div>
 
         {/* Content area: Table or Chart */}
-        <div className="px-12 pt-6">
+        <div className="px-12 pt-6 pb-28 max-h-[480px] overflow-hidden">
           {mode === "table" ? (
             <div className="rounded-xl p-5" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>
               <div className="overflow-x-auto rounded-lg bg-white ring-1" style={{ borderColor: 'var(--stroke, #E5E7EB)' }}>
@@ -265,12 +267,7 @@ const TableOrChart: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
           )}
         </div>
 
-        {/* Footer (standardized like IntroSlideLayout) */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
-        </div>
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )

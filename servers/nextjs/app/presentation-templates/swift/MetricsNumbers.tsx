@@ -1,5 +1,7 @@
 import React from "react"
 import * as z from "zod"
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "MetricsNumbers"
 const layoutName = "Metrics Numbers"
@@ -42,7 +44,7 @@ const Schema = z
       .default(
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
       ),
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
     metrics: z
       .array(MetricSchema)
       .min(1)
@@ -72,7 +74,7 @@ const Schema = z
     title: "Our Impact in Numbers",
     leftTitle: "Proven Results\nThrough Data",
     leftBody: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    website: "www.yourwebsite.com",
+    website: "",
     metrics: [
       MetricSchema.parse({
         value: "10K+",
@@ -132,7 +134,7 @@ const MetricsNumbers: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
         {/* Separator line like the reference */}
         <div className="absolute top-0 left-1/2 w-[1px] h-full" style={{ backgroundColor: "rgba(0,0,0,0.1)" }}></div>
 
-        <div className="px-12 pt-3 grid grid-cols-[42%_58%] gap-8 items-start">
+        <div className="px-12 pt-3 pb-28 grid grid-cols-[42%_58%] gap-8 items-start max-h-[620px] overflow-hidden">
           {/* Left content */}
           <div>
             <h1 className="text-[48px] leading-[1.1] font-semibold max-w-[420px]" style={{ color: "var(--background-text, #111827)" }}>{slideData?.title}</h1>
@@ -166,11 +168,7 @@ const MetricsNumbers: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
         </div>
 
         {/* Footer (standardized like IntroSlideLayout) */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
-        </div>
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )

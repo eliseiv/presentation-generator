@@ -280,7 +280,7 @@ const ChartWithBulletsSlideLayout: React.FC<ChartWithBulletsSlideLayoutProps> = 
                     </div>
                 )}
                 {/* Main Content */}
-                <div className="flex h-full px-8 sm:px-12 lg:px-20 pt-8 pb-8">
+                <div className="flex h-full px-8 sm:px-12 lg:px-20 pt-8 pb-16 overflow-hidden">
                     {/* Left Section - Title, Description, Chart */}
                     <div className="flex-1 flex flex-col pr-8">
                         {/* Title */}

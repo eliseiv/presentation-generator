@@ -94,7 +94,7 @@ const MetricsWithImageSlideLayout: React.FC<MetricsWithImageSlideLayoutProps> = 
                 </div>
 
                 {/* Main Content */}
-                <div className="relative z-10 flex h-full px-8 sm:px-12 lg:px-20 pt-12 pb-8">
+                <div className="relative z-10 flex h-full px-8 sm:px-12 lg:px-20 pt-12 pb-16 overflow-hidden">
                     {/* Left Section - Image */}
                     <div className="flex-1 flex items-center justify-center pr-8">
                         <div className="w-full max-w-lg h-96 rounded-2xl overflow-hidden shadow-lg">

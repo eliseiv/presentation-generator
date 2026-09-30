@@ -795,12 +795,17 @@ async def credit_storekit_transaction(
             grant_tokens = 0
 
     async with async_session_maker() as session:
-        existing = await session.execute(
-            select(TokenLedgerEntry).where(
-                TokenLedgerEntry.reference_id == transaction_id,
-                TokenLedgerEntry.reason == TokenLedgerEntry.REASON_STOREKIT_PURCHASE,
-            )
-        )
+        environment = str(transaction.get("environment") or "").strip().lower()
+        # Apple sandbox/production transactionIds are globally unique.
+        # Xcode StoreKit Testing reuses tiny ids (0, 1, 2…) per simulator,
+        # so a grant for another tester would otherwise look like a duplicate.
+        lookup = [
+            TokenLedgerEntry.reference_id == transaction_id,
+            TokenLedgerEntry.reason == TokenLedgerEntry.REASON_STOREKIT_PURCHASE,
+        ]
+        if environment == "xcode":
+            lookup.append(TokenLedgerEntry.user_id == user_id)
+        existing = await session.execute(select(TokenLedgerEntry).where(*lookup))
         prior = existing.scalars().first()
         if prior is not None:
             user = await get_or_create_user(session, user_id)

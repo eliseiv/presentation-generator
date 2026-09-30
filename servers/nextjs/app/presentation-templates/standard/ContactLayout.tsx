@@ -1,5 +1,6 @@
 import React from 'react'
 import * as z from "zod";
+import { websiteField } from "../dummyWebsite";
 
 
 const ImageSchema = z.object({
@@ -49,15 +50,15 @@ const Schema = z.object({
       __icon_query__: "photo placeholder",
     }),
     websiteBar: z.object({
-      websiteText: z.string().min(12).max(30).default("www.yourwebsite.com").meta({
-        description: "Website text in bottom green bar. Max 4 words",
+      websiteText: websiteField.meta({
+        description: "Real company website only. Leave empty if unknown.",
       }),
       actionIcon: IconSchema.default({
         __icon_url__: "data:svg+xml,plus-arrow",
         __icon_query__: "plus arrow",
       }),
     }).default({
-      websiteText: "www.yourwebsite.com",
+      websiteText: "",
       actionIcon: {
         __icon_url__: "data:svg+xml,plus-arrow",
         __icon_query__: "plus arrow",
@@ -73,7 +74,7 @@ const Schema = z.object({
       __icon_query__: "photo placeholder",
     },
     websiteBar: {
-      websiteText: "www.yourwebsite.com",
+      websiteText: "",
       actionIcon: {
         __icon_url__: "data:svg+xml,plus-arrow",
         __icon_query__: "plus arrow",

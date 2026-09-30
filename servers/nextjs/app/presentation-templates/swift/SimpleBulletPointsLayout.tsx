@@ -1,5 +1,7 @@
 import React from "react"
 import * as z from "zod"
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "simple-bullet-points-layout"
 const layoutName = "Simple Bullet Points"
@@ -33,7 +35,7 @@ const Schema = z
       .min(1)
       .max(4)
       .default([PointSchema.parse({}), PointSchema.parse({}), PointSchema.parse({}), PointSchema.parse({ title: "Your Title Here", body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa." })]),
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
   })
   .default({
     title: "Our Commitment to Innovation",
@@ -45,7 +47,7 @@ const Schema = z
       { title: "Your Title Here", body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa." },
 
     ],
-    website: "www.yourwebsite.com",
+    website: "",
   })
 
 type SlideData = z.infer<typeof Schema>
@@ -93,7 +95,7 @@ const CommitmentTwoPoints: React.FC<SlideLayoutProps> = ({ data: slideData }) =>
         ></div>
 
         {/* Content grid */}
-        <div className="px-12 pt-4 grid grid-cols-[48%_52%] gap-10 items-start">
+        <div className="px-12 pt-4 pb-28 grid grid-cols-[48%_52%] gap-10 items-start max-h-[620px] overflow-hidden">
           {/* Left heading and statement */}
           <div>
             <div className="text-[56px] leading-[1.05] font-semibold" style={{ color: 'var(--background-text, #111827)' }}>
@@ -110,18 +112,13 @@ const CommitmentTwoPoints: React.FC<SlideLayoutProps> = ({ data: slideData }) =>
             {points.slice(0, 4).map((p, i) => (
               <div key={i}>
                 <div className="text-[24px] font-semibold" style={{ color: 'var(--background-text, #111827)' }}>{p.title}</div>
-                <p className="mt-3 text-[16px] leading-[1.8]" style={{ color: 'var(--background-text, #6B7280)' }}>{p.body}</p>
+                <p className="mt-3 text-[16px] leading-[1.6] line-clamp-3" style={{ color: 'var(--background-text, #6B7280)' }}>{p.body}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Footer (align with other Swift layouts) */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
-        </div>
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )

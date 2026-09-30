@@ -1,5 +1,7 @@
 import React from "react"
 import * as z from "zod"
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "SwiftTableOfContents"
 const layoutName = "Table Of Contents"
@@ -39,7 +41,7 @@ const Schema = z
         { title: "Business Model", description: "How we create and capture value." },
         { title: "Conclusion", description: "Closing notes and next steps." },
       ]),
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
   })
   .default({
     title: "Table of Contents",
@@ -56,7 +58,7 @@ const Schema = z
       { title: "Conclusion", description: "Closing notes and next steps." },
 
     ],
-    website: "www.yourwebsite.com",
+    website: "",
   })
 
 type SlideData = z.infer<typeof Schema>
@@ -98,7 +100,7 @@ const TableOfContents: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
         </div>
 
         {/* List */}
-        <div className="px-12 pt-8">
+        <div className="px-12 pt-6 pb-28 max-h-[560px] overflow-hidden">
           <div className="grid grid-cols-2 gap-x-12 gap-y-6 max-w-[1180px]">
             {items.slice(0, 10).map((item, idx) => (
               <div key={idx} className="relative">
@@ -132,11 +134,7 @@ const TableOfContents: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
         </div>
 
         {/* Footer (standardized like IntroSlideLayout) */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
-        </div>
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )

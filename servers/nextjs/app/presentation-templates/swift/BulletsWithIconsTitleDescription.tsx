@@ -3,6 +3,8 @@ import * as z from "zod"
 
 import { IconSchema } from '../defaultSchemes';
 import { RemoteSvgIcon } from "@/app/hooks/useRemoteSvgIcon";
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "bullet-with-icons-title-description"
 const layoutName = "Bullet With Icons Title Description"
@@ -91,7 +93,7 @@ const Schema = z
             "Concise supporting text under the fourth icon explaining the point.",
         },
       ]),
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
   })
   .default({
     title: "Our Infographic",
@@ -124,7 +126,7 @@ const Schema = z
           "Concise supporting text under the fourth icon explaining the point.",
       },
     ],
-    website: "www.yourwebsite.com",
+    website: "",
   })
 
 type SlideData = z.infer<typeof Schema>
@@ -199,7 +201,7 @@ const InfographicFourIcons: React.FC<SlideLayoutProps> = ({ data }) => {
         </div>
 
         {/* Icons row */}
-        <div className="px-12 pt-12">
+        <div className="px-12 pt-8 pb-28 max-h-[420px] overflow-hidden">
           <div className="grid grid-flow-col auto-cols-[260px] gap-8 justify-center">
             {items.slice(0, 4).map((item, idx) => (
               <div key={idx} className="flex flex-col items-center text-center">
@@ -229,11 +231,7 @@ const InfographicFourIcons: React.FC<SlideLayoutProps> = ({ data }) => {
           </div>
         </div>
 
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
-        </div>
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData.website} />
       </div>
     </>
   )

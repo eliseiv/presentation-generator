@@ -91,7 +91,7 @@ const BulletWithIconsSlideLayout: React.FC<BulletWithIconsSlideLayoutProps> = ({
 
 
                 {/* Main Content */}
-                <div className="flex flex-col h-full px-8 sm:px-12 lg:px-20 pt-12 pb-8">
+                <div className="flex flex-col h-full px-8 sm:px-12 lg:px-20 pt-12 pb-16 overflow-hidden">
                     {/* Title Section - Full Width */}
                     <div className="mb-8">
                         <h1 style={{ color: "var(--background-text, #111827)" }} className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900">

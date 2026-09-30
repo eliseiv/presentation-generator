@@ -126,7 +126,7 @@ const TeamSlideLayout: React.FC<TeamSlideLayoutProps> = ({ data: slideData }) =>
                 </div>
 
                 {/* Main Content */}
-                <div className="relative z-10 flex h-full px-8 sm:px-12 lg:px-20 pt-12 pb-8">
+                <div className="relative z-10 flex h-full px-8 sm:px-12 lg:px-20 pt-12 pb-16 overflow-hidden">
                     {/* Left Section - Title and Company Description */}
                     <div className="flex-1 flex flex-col justify-center pr-8 space-y-6">
                         {/* Title */}

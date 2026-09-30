@@ -1,5 +1,7 @@
 import React from "react"
 import * as z from "zod"
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "image-list-description-slide"
 const layoutName = "Image List Description"
@@ -61,7 +63,7 @@ const Schema = z
         ItemSchema.parse({ title: "Another Item", description: "Concise supporting text.", image: ImageSchema.parse({}) }),
         ItemSchema.parse({ title: "Third Item", description: "Concise supporting text.", image: ImageSchema.parse({}) }),
       ]),
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
   })
   .default({
 
@@ -74,7 +76,7 @@ const Schema = z
       ItemSchema.parse({ title: "Another Item", description: "Concise supporting text.", image: ImageSchema.parse({}) }),
       ItemSchema.parse({ title: "Third Item", description: "Concise supporting text.", image: ImageSchema.parse({}) }),
     ],
-    website: "www.yourwebsite.com",
+    website: "",
   })
 
 type SlideData = z.infer<typeof Schema>
@@ -114,7 +116,7 @@ const TeamMembers: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
           </div>
         </div>
 
-        <div className="px-12 pt-6 grid grid-cols-[36%_64%] gap-8 items-start">
+        <div className="px-12 pt-6 pb-28 grid grid-cols-[36%_64%] gap-8 items-start max-h-[620px] overflow-hidden">
           {/* Left text stack */}
           <div>
             <div
@@ -151,14 +153,7 @@ const TeamMembers: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
           </div>
         </div>
 
-        {/* Footer line with website and end diamond */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "#E5E7EB" }}></div>
-        </div>
-
-        {/* Big bottom-right diamond */}
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )

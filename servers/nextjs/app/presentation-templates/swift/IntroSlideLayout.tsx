@@ -1,5 +1,7 @@
 import React from "react"
 import * as z from "zod"
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "IntroSlideLayout"
 const layoutName = "Intro Slide Layout"
@@ -37,11 +39,7 @@ const Schema = z
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
       ),
 
-    website: z
-      .string()
-      .min(6)
-      .max(60)
-      .default("www.yourwebsite.com"),
+    website: websiteField,
 
     introCard: z
       .object({
@@ -64,7 +62,7 @@ const Schema = z
     subtitleAccent: "Template",
     paragraph:
       "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-    website: "www.yourwebsite.com",
+    website: "",
     introCard: { enabled: true, name: "John Doe", date: "Jan 1, 2025" },
     media: { type: "image", image: ImageSchema.parse({}) },
   })
@@ -157,14 +155,7 @@ const IntroSlideLayout: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
 
         </div>
 
-        {/* Footer line with website and end diamond */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px] " style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #E5E7EB)" }}></div>
-        </div>
-
-        {/* Big bottom-right diamond */}
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )

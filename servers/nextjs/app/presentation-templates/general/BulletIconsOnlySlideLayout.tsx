@@ -129,7 +129,7 @@ const BulletIconsOnlySlideLayout: React.FC<BulletIconsOnlySlideLayoutProps> = ({
                 </div>
 
                 {/* Main Content */}
-                <div className="relative z-10 flex h-full px-8 sm:px-12 lg:px-20 pt-12 pb-8">
+                <div className="relative z-10 flex h-full px-8 sm:px-12 lg:px-20 pt-12 pb-16 overflow-hidden">
                     {/* Left Section - Title and Bullet Points */}
                     <div className="flex-1 flex flex-col pr-8">
                         {/* Title */}

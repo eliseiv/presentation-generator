@@ -1,6 +1,8 @@
 import React from "react"
 import * as z from "zod"
 import { RemoteSvgIcon } from "@/app/hooks/useRemoteSvgIcon";
+import { websiteField } from "../dummyWebsite"
+import { SwiftFooter } from "./SwiftFooter"
 
 const layoutId = "icon-bullet-list-description-slide"
 const layoutName = "Icon Bullet List Description"
@@ -83,7 +85,7 @@ const Schema = z
           }),
         },
       ]),
-    website: z.string().min(6).max(60).default("www.yourwebsite.com"),
+    website: websiteField,
   })
   .default({
 
@@ -117,7 +119,7 @@ const Schema = z
         }),
       },
     ],
-    website: "www.yourwebsite.com",
+    website: "",
   })
 
 type SlideData = z.infer<typeof Schema>
@@ -165,7 +167,7 @@ const FeatureCards: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
         <div className="absolute left-0 right-0 bottom-20 h-[160px]" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}></div>
 
         {/* Feature cards */}
-        <div className="relative px-12 mt-8">
+        <div className="relative px-12 mt-8 pb-28 max-h-[420px] overflow-hidden">
           <div className="grid grid-flow-col auto-cols-[260px] gap-6 justify-center">
             {features.slice(0, 4).map((f, i) => (
               <div key={i} className="rounded-[22px] shadow-[0_16px_40px_rgba(0,0,0,0.08)] overflow-hidden" style={{ backgroundColor: 'var(--primary-color, #BFF4FF)' }}>
@@ -187,12 +189,7 @@ const FeatureCards: React.FC<SlideLayoutProps> = ({ data: slideData }) => {
           </div>
         </div>
 
-        {/* Footer (standardized like IntroSlideLayout) */}
-        <div className="absolute bottom-8 left-12 right-12 flex items-center">
-          <span className="text-[14px]" style={{ color: "var(--background-text, #6B7280)" }}>{slideData?.website}</span>
-          <div className="ml-6 h-[2px] flex-1" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
-        </div>
-        <div className="absolute bottom-7 right-6 w-8 h-8 rotate-45" style={{ backgroundColor: "var(--background-text, #111827)" }}></div>
+        <SwiftFooter website={slideData?.website} />
       </div>
     </>
   )
